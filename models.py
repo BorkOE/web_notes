@@ -10,7 +10,8 @@ class Board(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    background_color = db.Column(db.String(7), default="#FFFFFF")  # new
+    background_color = db.Column(db.String(7), default="#FFFFFF")
+    snapping = db.Column(db.Boolean, default=False)  # 👈 NEW
     notes = db.relationship('Note', backref='board', cascade='all, delete-orphan')
 
 class Note(db.Model):

@@ -10,8 +10,12 @@ let activeNoteId = null;
 let maxZ = 1; // track highest z-index so we can bring notes to front
 let clipboardNote = null;
 let lastClickPos = { x: 100, y: 100 }; // fallback default
-let snapEnabled = true; // default off
+let snapEnabled = false; // default off
 let lastActiveNoteId = null;
+let contextBoardId = null;  // Board ID for context menu actions
+let LONGPRESS_MS = 400;
+
+
 
 async function api(path, method = "GET", body = null) {
   const opts = { method, headers: { "Content-Type": "application/json" } };
@@ -51,119 +55,202 @@ newBoardBtn.addEventListener("click", async () => {
   }
 });
 
-deleteBoardBtn.addEventListener("click", async () => {
-  if (!currentBoardId) return;
-
-  if (!confirm("Delete this board (and all its notes)?")) return;
-
-  try {
-    await api(`/boards/${currentBoardId}`, "DELETE");
-    await loadBoards();
-
-    // fallback: select the first board
-    const firstBoard = document.querySelector(".board-tab");
-    if (firstBoard) {
-      selectBoard(parseInt(firstBoard.dataset.id));
-    }
-  } catch (err) {
-    alert("Failed to delete board");
-    console.error(err);
-  }
-});
-
-duplicateBoardBtn.addEventListener("click", async () => {
-  if (!currentBoardId) return;
-
-  try {
-    const res = await api(`/boards/${currentBoardId}/duplicate`, "POST");
-    await loadBoards();
-    selectBoard(res.id); // switch to the new copy immediately
-  } catch (err) {
-    alert("Failed to duplicate board");
-    console.error(err);
-  }
-});
-
-renameBoardBtn.addEventListener("click", async () => {
-  if (!currentBoardId) return;
-
-  const newName = prompt(
-    "Enter new board name:",
-    document.getElementsByClassName("board-tab active")[0].textContent
-  );
-  if (!newName) return;
-
-  try {
-    var res = await api(`/boards/${currentBoardId}`, "PATCH", { name: newName });
-    console.log(res);
-    await loadBoards();
-    // console.log("Renamed board to", newName);
-    selectBoard(currentBoardId); // stay on the renamed board
-  } catch (err) {
-    alert("Failed to rename board");
-    console.error(err);
-  }
-});
-
 snapToggle.addEventListener("click", () => {
-    if (snapToggle.checked){
-        snapEnabled = true;
-        snapToggle.classList.toggle("active", snapEnabled);
-    }
-    else{
-        snapEnabled = false;
-    }
+  if (snapToggle.checked) {
+    snapEnabled = true;
+    snapToggle.classList.toggle("active", snapEnabled);
+  }
+  else {
+    snapEnabled = false;
+  }
   loadNotes();
 });
+
+snapToggle.addEventListener("change", async (e) => {
+  if (!currentBoardId) return;
+  snapEnabled = Boolean(e.target.checked); // ✅ keep snapEnabled in sync
+  try {
+    await api(`/boards/${currentBoardId}`, "PATCH", { snapping: snapEnabled });
+  } catch (err) {
+    console.error("Failed to update snapping", err);
+  }
+});
+
+document.getElementById("boards").addEventListener("pointerdown", (e) => {
+  const tab = e.target.closest(".board-tab");
+  if (!tab) return;
+
+  let startX = e.clientX;
+  let startY = e.clientY;
+  longPressTriggered = false;
+
+  longPressTimer = setTimeout(() => {
+    contextBoardId = parseInt(tab.dataset.id);
+    showBoardContextMenu(tab, e.pageX, e.pageY);
+    longPressTriggered = true;
+  }, LONGPRESS_MS);
+
+  const moveHandler = (moveEvent) => {
+    const dx = Math.abs(moveEvent.clientX - startX);
+    const dy = Math.abs(moveEvent.clientY - startY);
+    const moveThreshold = 5; // small threshold in pixels
+    if (dx > moveThreshold || dy > moveThreshold) {
+      clearTimeout(longPressTimer);
+      document.removeEventListener("pointermove", moveHandler);
+      document.removeEventListener("pointerup", upHandler);
+    }
+  };
+
+  const upHandler = () => {
+    clearTimeout(longPressTimer);
+    document.removeEventListener("pointermove", moveHandler);
+    document.removeEventListener("pointerup", upHandler);
+  };
+
+  document.addEventListener("pointermove", moveHandler);
+  document.addEventListener("pointerup", upHandler);
+});
+
+
+document.addEventListener("pointerup", () => {
+  clearTimeout(longPressTimer);
+});
+
+function showBoardContextMenu(tab, x, y) {
+  const menu = document.getElementById("boardContextMenu");
+  menu.classList.remove("hidden");
+
+  // Position near the tab
+  menu.style.left = x + "px";
+  menu.style.top = y + "px";
+}
+
+function closeBoardContextMenu() {
+  const menu = document.getElementById("boardContextMenu");
+  menu.classList.add("hidden");
+  contextBoardId = null;
+}
+
+// Hide when clicking outside
+document.addEventListener("click", (e) => {
+  const menu = document.getElementById("boardContextMenu");
+  if (!menu.contains(e.target)) {
+    menu.classList.add("hidden");
+    contextBoardId = null;
+  }
+});
+
+// Hook up menu buttons
+document.getElementById("renameBoardFromMenuBtn").addEventListener("click", async () => {
+  if (!contextBoardId) return;
+  const newName = prompt("Enter new board name:", document.getElementsByClassName("board-tab active")[0].textContent);
+  if (!newName) return;
+  await api(`/boards/${contextBoardId}`, "PATCH", { name: newName });
+  await loadBoards();
+  selectBoard(contextBoardId);
+  closeBoardContextMenu();
+});
+
+document.getElementById("deleteBoardFromMenuBtn").addEventListener("click", async () => {
+  if (!contextBoardId) return;
+  if (!confirm("Delete this board?")) return;
+  await api(`/boards/${contextBoardId}`, "DELETE");
+  await loadBoards();
+  closeBoardContextMenu();
+  const firstBoard = document.querySelector(".board-tab");
+  if (firstBoard) {
+    selectBoard(parseInt(firstBoard.dataset.id));
+  }
+});
+
+document.getElementById("duplicateBoardFromMenuBtn").addEventListener("click", async () => {
+  if (!contextBoardId) return;
+  await api(`/boards/${contextBoardId}/duplicate`, "POST");
+  await loadBoards();
+  closeBoardContextMenu();
+});
+
 
 if (copyNoteBtn) copyNoteBtn.addEventListener("click", copyNote);
 if (pasteNoteBtn) pasteNoteBtn.addEventListener("click", pasteNote);
 
 // Initialize Pickr for board background color
 const pickr = Pickr.create({
-    el: "#bgColorPickerContainer",
-    theme: "classic", // 'classic', 'monolith', or 'nano'
-    swatches: [
-        'rgba(244, 67, 54, 1)',
-        'rgba(233, 30, 99, 0.95)',
-        'rgba(156, 39, 176, 0.9)',
-        'rgba(103, 58, 183, 0.85)',
-    ],
+  el: "#bgColorPickerContainer",
+  theme: "classic", // 'classic', 'monolith', or 'nano'
+  swatches: [
+    '#E8E7E7',
+    '#FFE1E1',
+    '#FFF0E1',
+    '#FFFDE1',
+    '#EBFFE1',
+    '#E1FDFF',
+    '#E1F4FF',
+    '#EAE1FF',
+    '#FEE1FF',
+    '#FFE1F2',
+  ],
 
-    default: "#cfd6d8ff",
-    components: {
-        preview: true,
-        opacity: true,
-        hue: true,
-        interaction: {
-        hex: true,
-        input: true,
-        save: true,
-        },
+  default: "#cfd6d8ff",
+  components: {
+    preview: true,
+    opacity: true,
+    hue: true,
+    interaction: {
+      hex: true,
+      input: true,
+      save: true,
     },
+  },
 });
 
-pickr.on("save", async (color) => {
-    if (!currentBoardId) return;
-    const hex = color.toHEXA().toString();
-    document.getElementById("boardArea").style.background = hex;
+pickr.on("change", async (color) => {
+  if (!currentBoardId) return;
+  const hex = color.toHEXA().toString();
+  document.getElementById("boardArea").style.background = hex;
 
-    try {
-        await api(`/boards/${currentBoardId}`, "PATCH", {
-        background_color: hex,
-        });
-        console.log("Board color updated to", hex);
-    } catch (err) {
-        console.error("Failed to save board color", err);
-    }
-    pickr.hide();
+  try {
+    await api(`/boards/${currentBoardId}`, "PATCH", {
+      background_color: hex,
+    });
+    console.log("Board color updated to", hex);
+  } catch (err) {
+    console.error("Failed to save board color", err);
+  }
+  pickr.applyColor();
 });
 
 // Put this inside window.onload or after DOM is ready
 const noteColorPickr = Pickr.create({
   el: '#noteColorPickerContainer',
-  theme: 'classic', 
+  theme: 'classic',
   default: '#FFF59D', // default note color
+  swatches: [
+    '#FB6E6E',
+    '#FFBBBB',
+    '#FFE3E3',
+    '#FDAA52',
+    '#FFCD9A',
+    '#FFE8D1',
+    '#FDEA52',
+    '#FFF4A0',
+    '#FFFAD1',
+    '#B7EB40',
+    '#D6F392',
+    '#F1FFD2',
+    '#41DBDB',
+    '#B5EBEB',
+    '#DBF5F5',
+    '#51AFE7',
+    '#ABD8F3',
+    '#E6F6FF',
+    '#B972F5',
+    '#D4ABF7',
+    '#EBDCF7',
+
+
+  ],
+
   components: {
     preview: true,
     opacity: true,
@@ -176,17 +263,34 @@ const noteColorPickr = Pickr.create({
   }
 });
 
+// When a color is saved
+noteColorPickr.on("change", async (color) => {
+  if (!lastActiveNoteId) return;
+  console.log("Selected color:", color.toHEXA().toString());
+
+  const hex = color.toHEXA().toString();
+  const el = notes[lastActiveNoteId];
+  if (el) el.style.background = hex;
+
+  try {
+    await api(`/notes/${lastActiveNoteId}`, "PATCH", { color: hex });
+  } catch (err) {
+    console.error("Failed to save note color", err);
+  }
+
+  noteColorPickr.applyColor();
+});
+
 // Set initial color when loading the board
 async function updateBoardBackgroundColor(boardId) {
-    const boards = await api("/boards");
-    const board = boards.find((b) => b.id === boardId);
-    if (board) {
-        // bgColorPicker.value = board.background_color || "#FFFFFF";
-        pickr.setColor(board.background_color || "#FFFFFF");
-        document.getElementById("boardArea").style.background = board.background_color || "#FFFFFF";
-    }
-    }
-
+  const boards = await api("/boards");
+  const board = boards.find((b) => b.id === boardId);
+  if (board) {
+    // bgColorPicker.value = board.background_color || "#FFFFFF";
+    pickr.setColor(board.background_color || "#FFFFFF");
+    document.getElementById("boardArea").style.background = board.background_color || "#FFFFFF";
+  }
+}
 
 
 async function pasteNote() {
@@ -222,9 +326,16 @@ async function loadBoards() {
     el.className = "board-tab" + (currentBoardId === b.id ? " active" : "");
     el.textContent = b.name;
     el.dataset.id = b.id;
-    el.onclick = () => {
+    el.onclick = (e) => {
+      if (longPressTriggered) {
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        longPressTriggered = false; // reset so next click works
+        return; // suppress normal click
+      }
       selectBoard(b.id);
     };
+
     container.appendChild(el);
   });
 }
@@ -238,8 +349,17 @@ async function createBoard() {
 
 async function selectBoard(id) {
   currentBoardId = id;
-  await loadNotes();
+  // await loadNotes();
   await loadBoards();
+
+  const boards = await api("/boards"); // already returns snapping
+  const current = boards.find(b => b.id === id);
+  if (current) {
+    snapEnabled = current.snapping; // ✅ sync global
+    snapToggle.checked = snapEnabled;
+    // applySnapping(snapEnabled);
+    await loadNotes(); // ensure notes re-render with correct snapping
+  }
 
   await updateBoardBackgroundColor(currentBoardId);
 
@@ -262,7 +382,7 @@ function bringToFront(el, noteId) {
   maxZ += 1;
   el.style.zIndex = maxZ;
   // persist z-index (non-blocking)
-  api("/notes/" + noteId, "PATCH", { z_index: maxZ }).catch(() => {});
+  api("/notes/" + noteId, "PATCH", { z_index: maxZ }).catch(() => { });
 }
 
 function selectNote(el, id) {
@@ -272,6 +392,10 @@ function selectNote(el, id) {
   el.classList.add("selected");
   activeNoteId = id;
   lastActiveNoteId = id; // store it
+
+  // Set color picker to current note color
+  const currentColor = el.style.background || "#FFF59D";
+  noteColorPickr.setColor(currentColor);
 }
 
 function deselectAllNotes() {
@@ -296,6 +420,11 @@ function createNoteElement(n) {
   handle.className = "drag-handle";
   el.appendChild(handle);
   el.appendChild(ta);
+
+  // 👉 blur textarea when starting drag
+  handle.addEventListener("pointerdown", () => {
+    ta.blur();
+  });
 
   // helpers: debounced persisters (per-note)
   const persistHeightDebounced = debounce(async (h) => {
@@ -333,6 +462,7 @@ function createNoteElement(n) {
       const newElHeight = Math.round(newTaHeight + extra);
       el.style.height = newElHeight + "px";
 
+
       if (persist) persistHeightDebounced(newTaHeight);
     });
   }
@@ -361,29 +491,29 @@ function createNoteElement(n) {
     clearTimeout(longPressTimer);
     try {
       el.releasePointerCapture(e.pointerId);
-    } catch (err) {}
+    } catch (err) { }
   });
   el.addEventListener("pointercancel", () => clearTimeout(longPressTimer));
 
   // click/tap behavior:
   el.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    if (longPressTriggered) {
+    if (longPressTriggered || isScrolling) {
       longPressTriggered = false;
-      return;
+      return; // don't open action sheet
     }
 
     bringToFront(el, n.id);
 
-    if (activeNoteId === n.id) {
-      // already selected -> second click => edit
-      ta.focus();
-    } else {
-      // first click => just select
-      activeNoteId = n.id;
-      selectNote(el, n.id);
-      openActionSheet(n.id);
-    }
+    // if (activeNoteId === n.id) {
+    // already selected -> second click => edit
+    // ta.focus();
+    // } else {
+    // first click => just select
+    activeNoteId = n.id;
+    selectNote(el, n.id);
+    openActionSheet(n.id);
+    // }
   });
 
   el.appendChild(ta);
@@ -419,6 +549,7 @@ function createNoteElement(n) {
 
       listeners: {
         start(event) {
+          document.body.classList.add("dragging");  // disable text selection
           bringToFront(event.target, n.id);
         },
         move(event) {
@@ -432,6 +563,7 @@ function createNoteElement(n) {
           target.setAttribute("data-y", dy);
         },
         end: async (event) => {
+          document.body.classList.remove("dragging");  // re-enable selection
           const t = event.target;
           const dx = parseFloat(t.getAttribute("data-x")) || 0;
           const dy = parseFloat(t.getAttribute("data-y")) || 0;
@@ -464,12 +596,12 @@ function createNoteElement(n) {
       inertia: false,
       preventDefault: "always",
       modifiers: [
-      interact.modifiers.snapSize({
-        targets: snapEnabled
-          ? [interact.createSnapGrid({ width: snapGridSize, height: snapGridSize })]
-          : [],
-      }),
-    ],
+        interact.modifiers.snapSize({
+          targets: snapEnabled
+            ? [interact.createSnapGrid({ width: snapGridSize, height: snapGridSize })]
+            : [],
+        }),
+      ],
     })
     .on("resizemove", function (event) {
       const target = event.target;
@@ -514,6 +646,17 @@ async function loadNotes() {
   clearBoardArea();
   const data = await api("/boards/" + currentBoardId + "/notes");
   data.forEach(createNoteElement);
+
+  // Add invisible note at bottom-right to enable scrolling
+  const paddingNote = {
+    id: "dummy-scroll-note",
+    x: 2000,  // adjust width of scrollable area
+    y: 2000,  // adjust height of scrollable area
+    width: 1,
+    height: 1,
+    color: "transparent",
+  };
+  createNoteElement(paddingNote);
 }
 
 async function addNote() {
@@ -551,7 +694,7 @@ async function copyNote() {
     color: n.style.background || "#FFF59D",
   };
 
-//   alert("Note copied! Switch boards and use Paste to insert.");
+  //   alert("Note copied! Switch boards and use Paste to insert.");
   closeActionSheet();
 }
 
@@ -620,29 +763,11 @@ function changeNoteColor() {
   noteColorPickr.show();
 }
 
-// When a color is saved
-noteColorPickr.on("save", async (color) => {
-  if (!lastActiveNoteId) return;
-  console.log("Selected color:", color.toHEXA().toString());
-
-  const hex = color.toHEXA().toString();
-  const el = notes[lastActiveNoteId];
-  if (el) el.style.background = hex;
-
-  try {
-    await api(`/notes/${lastActiveNoteId}`, "PATCH", { color: hex });
-  } catch (err) {
-    console.error("Failed to save note color", err);
-  }
-
-  noteColorPickr.hide();
-  closeActionSheet();
-});
-
-
 async function deleteNote() {
   if (!activeNoteId) return;
-  if (!confirm("Delete note?")) return;
+  if (notes[activeNoteId].childNodes[1].value) {
+    if (!confirm("Delete note?")) return;
+  }
   try {
     await api("/notes/" + activeNoteId, "DELETE");
     closeActionSheet();
@@ -674,8 +799,8 @@ window.addEventListener("load", async () => {
   const addNoteBtn = document.getElementById("addNoteBtn");
   if (addNoteBtn) addNoteBtn.addEventListener("click", addNote);
 
-//   const changeColorBtn = document.getElementById("changeColorBtn");
-//   if (changeColorBtn) changeColorBtn.addEventListener("click", changeColor);
+  //   const changeColorBtn = document.getElementById("changeColorBtn");
+  //   if (changeColorBtn) changeColorBtn.addEventListener("click", changeColor);
   const deleteNoteBtn = document.getElementById("deleteNoteBtn");
   if (deleteNoteBtn) deleteNoteBtn.addEventListener("click", deleteNote);
 
@@ -756,6 +881,20 @@ boardArea.addEventListener("click", (e) => {
 const actionSheet = document.getElementById("actionSheet");
 actionSheet.addEventListener("click", (e) => {
   e.stopPropagation(); // Prevent window click from firing
+});
+
+let isScrolling = false;
+
+boardArea.addEventListener("pointerdown", () => {
+  isScrolling = false;
+});
+
+boardArea.addEventListener("pointermove", () => {
+  isScrolling = true;
+});
+
+boardArea.addEventListener("pointerup", () => {
+  setTimeout(() => isScrolling = false, 50); // reset shortly after pointer up
 });
 
 

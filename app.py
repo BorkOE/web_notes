@@ -29,7 +29,14 @@ def index():
 @app.route('/api/boards')
 def list_boards():
     boards = Board.query.order_by(Board.id).all()
-    return jsonify([{'id': b.id, 'name': b.name, 'background_color': b.background_color} for b in boards])
+    return jsonify([
+        {
+            'id': b.id,
+            'name': b.name,
+            'background_color': b.background_color,
+            'snapping': b.snapping,
+        } for b in boards
+    ])
 
 @app.route('/api/boards', methods=['POST'])
 def create_board():
@@ -44,19 +51,30 @@ def create_board():
 def update_board(board_id):
     b = Board.query.get_or_404(board_id)
     data = request.json or {}
-
     if 'background_color' in data:
         b.background_color = data['background_color']
     if 'name' in data:
         b.name = data['name']
-
+    if 'snapping' in data:
+        b.snapping = bool(data['snapping'])
     db.session.commit()
     return jsonify({
         'status': 'ok',
         'id': b.id,
+        'background_color': b.background_color,
         'name': b.name,
-        'background_color': b.background_color
+        'snapping': b.snapping
     })
+
+@app.route("/api/boards/reorder", methods=["PATCH"])
+def reorder_boards():
+    data = request.json.get("order", [])
+    for item in data:
+        board = Board.query.get(item["id"])
+        if board:
+            board.position = item["position"]
+    db.session.commit()
+    return jsonify({"status": "ok"})
 
 
 @app.route('/api/boards/<int:board_id>', methods=['DELETE'])
@@ -79,7 +97,12 @@ def delete_board(board_id):
 def duplicate_board(board_id):
     board = Board.query.get_or_404(board_id)
 
-    new_board = Board(name=f"{board.name} (copy)")
+    new_board = Board(
+        name=f"{board.name} (copy)",
+        background_color=board.background_color,
+        snapping=board.snapping
+    )
+
     db.session.add(new_board)
     db.session.flush()  # so new_board.id is available before commit
 
@@ -168,4 +191,4 @@ def delete_note(note_id):
     return jsonify({'status': 'deleted'})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=1900, debug=True)
+    app.run(host='0.0.0.0', port=1906, debug=True)

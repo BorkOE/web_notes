@@ -14,7 +14,14 @@ body {
     height: 100%;
     /* height: 100vh; */
     display: flex;
-    flex-direction: column
+    flex-direction: column;
+    user-select: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* when dragging */
+body.dragging {
+    user-select: none;
 }
 
 .topbar {
@@ -101,11 +108,51 @@ display: flex;
     background: rgba(0, 0, 0, 0.05);
 }
 
+.context-menu {
+    position: absolute;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    padding: 6px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    z-index: 2000;
+}
+
+.context-menu.hidden {
+    display: none;
+}
+
+.context-menu .menu-content button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 6px 10px;
+    border: none;
+    background: none;
+    cursor: pointer;
+}
+
+.context-menu .menu-content button:hover {
+    background: #f0f0f0;
+}
+
 .board-tab {
-    padding: 8px 12px;
-    border-radius: 8px;
+    display: inline-block;       /* let width adapt to content */
+    padding: 6px 12px;           /* horizontal padding */
+    border-radius: 9999px;       /* fully rounded, pill shape */
     background: #f7f7f7;
-    cursor: pointer
+    cursor: pointer;
+    white-space: nowrap;          /* prevent wrapping */
+    max-width: 100%;             /* prevent overflow out of container */
+    text-overflow: ellipsis;     /* optional: show ... if extremely long */
+    
+    
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -khtml-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
 }
 
 .board-tab.active {
@@ -116,18 +163,25 @@ display: flex;
     flex: 1;
     position: relative;
     overflow: auto;
-    min-height: calc(100vh - 56px);
-    /* padding-bottom: 70px; /* reserve space so notes never hide behind sheet */
+    padding-right: 250px;
+    /* min-height: calc(100vh - 56px); */
+    padding-bottom: 250px; /* reserve space so notes never hide behind sheet */
+    -webkit-overflow-scrolling: touch; /* smooth scrolling on iOS */
+    transition: background 0.2s ease; /* fade effect */
 }
+
 
 .note {
     position: absolute;
+    height: auto;
     border: 2px solid transparent;
     border-radius: 6px;
     padding-top: 25px;
     /* space for handle */
     box-sizing: border-box;
     touch-action: none;
+    transition: background 0.5s ease; /* fade effect */
+
 }
 
 .drag-handle {
@@ -181,8 +235,7 @@ display: flex;
     box-shadow: 0 -6px 12px rgba(0, 0, 0, 0.1);
     transform: translateY(100%);
     transition: transform 0.3s ease-in-out;
-    z-index: 9999;/* make sure it sits above notes */
-            
+    z-index: 9999;/* make sure it sits above notes */            
 }
 
 .action-sheet.visible {
@@ -240,4 +293,5 @@ display: flex;
   .board-area {
     min-height: calc(100vh - 48px); /* topbar smaller on mobile */
   }
+  
 }

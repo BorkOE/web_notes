@@ -20,7 +20,6 @@
         <div class="topbar-actions">
             <button id="addNoteBtn" class="icon-btn" title="New Note">➕</button>
             <button id="settingsBtn" class="icon-btn" title="Settings">⚙️</button>
-            <!-- <div id="bgColorPickerContainer" class="pickr-container" style="display:inline-block; width:36px; height:36px; border:1px solid #605e5e; border-radius:4px; cursor:pointer;"></div> -->
             <div class="bg-color-picker-wrapper">
                  <div id="bgColorPickerContainer" class="pickr-container"></div>
             </div>
@@ -33,20 +32,10 @@
     <div id="settingsMenu" class="settings-menu hidden">
         <div class="settings-content">
             <button id="newBoardBtn">➕ New board</button>
-            <button id="renameBoardBtn">✏️ Rename board</button>
-            <button id="deleteBoardBtn">🗑 Delete board</button>
-            <button id="duplicateBoardBtn">📑 Duplicate board</button>
             <button id="pasteNoteBtn">📋 Paste note</button>
             <button id="recentlyDeletedBtn">🕑 Recently deleted</button>
     
-            <hr>
-            <!-- Container for the color picker -->
-
-            <!-- <label>
-                🎨 Background color
-                <input type="color" id="bgColorPicker" />
-            </label> -->
-    
+            <hr>    
             <label>
                 📐 Snapping
                 <input type="checkbox" id="snapToggle" />
@@ -54,11 +43,19 @@
         </div>
     </div>
 
+    <!-- Board context menu -->
+    <div id="boardContextMenu" class="context-menu hidden">
+        <div class="menu-content">
+            <button id="renameBoardFromMenuBtn">✏️ Rename board</button>
+            <button id="duplicateBoardFromMenuBtn">📑 Duplicate board</button>
+            <button id="deleteBoardFromMenuBtn">🗑 Delete board</button>
+            <!-- Later: Move left/right -->
+        </div>
+    </div>
 
-
-    <main id="boardArea" class="board-area"></main>
-
-
+    <main id="boardArea" class="board-area">
+    </main>
+    
     <!-- Bottom action sheet -->
     <div id="actionSheet" class="action-sheet hidden">
         <div class="sheet-content">
@@ -69,6 +66,8 @@
             <button id="deleteNoteBtn">Delete</button>
         </div>
     </div>
+
+    
 </body>
     <script src="https://cdn.jsdelivr.net/npm/@simonwep/pickr"></script>
     <script src="/static/js/interact.js"></script>
