@@ -14,6 +14,7 @@ let snapEnabled = false; // default off
 let lastActiveNoteId = null;
 let contextBoardId = null;  // Board ID for context menu actions
 let LONGPRESS_MS = 400;
+let snapGridSize = 20; // pixels to snap to
 
 
 
@@ -45,7 +46,6 @@ newBoardBtn.addEventListener("click", async () => {
   const name = prompt("Board name?", "Untitled");
   try {
     const res = await api("/boards", "POST", { name });
-    console.log("Created board", res);
     // Reload boards and switch to the new one
     await loadBoards();
     selectBoard(res.id);
@@ -213,7 +213,6 @@ pickr.on("change", async (color) => {
     await api(`/boards/${currentBoardId}`, "PATCH", {
       background_color: hex,
     });
-    console.log("Board color updated to", hex);
   } catch (err) {
     console.error("Failed to save board color", err);
   }
@@ -266,7 +265,6 @@ const noteColorPickr = Pickr.create({
 // When a color is saved
 noteColorPickr.on("change", async (color) => {
   if (!lastActiveNoteId) return;
-  console.log("Selected color:", color.toHEXA().toString());
 
   const hex = color.toHEXA().toString();
   const el = notes[lastActiveNoteId];
@@ -405,25 +403,52 @@ function deselectAllNotes() {
 
 function createNoteElement(n) {
   const el = document.createElement("div");
+  
   el.className = "note";
   el.dataset.id = n.id;
-
+  
   _setElPositionSize(el, n);
+  if (n.dummy) {
+    return;
+  } // skip rest for dummy note
 
-  const ta = document.createElement("textarea");
-  ta.value = n.content || "";
-  ta.setAttribute("autocomplete", "off");
-  ta.setAttribute("autocorrect", "off");
-  ta.setAttribute("autocapitalize", "off");
+  const editorDiv = document.createElement("div");
+  editorDiv.className = "note-content";
+  editorDiv.contentEditable = true;
+  editorDiv.innerHTML = n.content || "";
+  editorDiv.setAttribute("contenteditable", "true");
+
+  // Initialize MediumEditor
+  const editor = new MediumEditor(editorDiv, {
+    placeholder: { text: "Type your note..." },
+    toolbar: {
+      buttons: [
+        "bold",
+        "italic",
+        "underline",
+        "anchor",
+        "h2",
+        "h3",
+        "justifyLeft",
+        "justifyCenter",
+        "justifyRight",
+        "unorderedlist",
+        "orderedlist",
+      ],
+    },
+  });
+
+  editorDiv.setAttribute("autocomplete", "off");
+  editorDiv.setAttribute("autocorrect", "off");
+  editorDiv.setAttribute("autocapitalize", "off");
 
   const handle = document.createElement("div");
   handle.className = "drag-handle";
   el.appendChild(handle);
-  el.appendChild(ta);
 
   // 👉 blur textarea when starting drag
   handle.addEventListener("pointerdown", () => {
-    ta.blur();
+    editorDiv.blur();
   });
 
   // helpers: debounced persisters (per-note)
@@ -437,19 +462,35 @@ function createNoteElement(n) {
 
   const saveContentDebounced = debounce(async () => {
     try {
-      await api("/notes/" + n.id, "PATCH", { content: ta.value });
+      await api("/notes/" + n.id, "PATCH", { content: editorDiv.innerHTML });
     } catch (err) {
       console.error("persist content err", err);
     }
-  }, 400);
+  }, 600);
+
+  editorDiv.addEventListener("input", () => {
+    autoResize(false);
+    saveContentDebounced();
+  });
+
+  editorDiv.addEventListener("blur", async () => {
+    try {
+      await api("/notes/" + n.id, "PATCH", {
+        content: editorDiv.innerHTML,
+        height: Math.round(editorDiv.scrollHeight),
+      });
+    } catch (err) {
+      console.error("Failed saving on blur", err);
+    }
+  });
 
   // Auto-resize function updates textarea height and parent .note height
   function autoResize(persist = false) {
     // UI update on next frame to avoid layout thrash
     requestAnimationFrame(() => {
-      ta.style.height = "auto"; // reset to measure
-      const newTaHeight = ta.scrollHeight; // content height (includes padding of textarea)
-      ta.style.height = newTaHeight + "px";
+      editorDiv.style.height = "auto"; // reset to measure
+      const newTaHeight = editorDiv.scrollHeight; // content height (includes padding of textarea)
+      editorDiv.style.height = newTaHeight + "px";
 
       // compute extra vertical space on parent (padding + borders)
       const cs = window.getComputedStyle(el);
@@ -462,25 +503,24 @@ function createNoteElement(n) {
       const newElHeight = Math.round(newTaHeight + extra);
       el.style.height = newElHeight + "px";
 
-
       if (persist) persistHeightDebounced(newTaHeight);
     });
   }
 
   // Save content & height when user types, but do UI resize immediately
-  ta.addEventListener("input", () => {
+  editorDiv.addEventListener("input", () => {
     autoResize(false); // immediate visual update
     saveContentDebounced(); // debounced content save
-    persistHeightDebounced(ta.scrollHeight); // schedule height save (debounced inside)
+    persistHeightDebounced(editorDiv.scrollHeight); // schedule height save (debounced inside)
   });
 
   // Ensure blur persists immediately
-  ta.addEventListener("blur", async () => {
+  editorDiv.addEventListener("blur", async () => {
     autoResize(true);
     try {
       await api("/notes/" + n.id, "PATCH", {
-        content: ta.value,
-        height: Math.round(ta.scrollHeight),
+        content: editorDiv.value,
+        height: Math.round(editorDiv.scrollHeight),
       });
     } catch (err) {
       console.error("Failed saving on blur", err);
@@ -491,7 +531,7 @@ function createNoteElement(n) {
     clearTimeout(longPressTimer);
     try {
       el.releasePointerCapture(e.pointerId);
-    } catch (err) { }
+    } catch (err) {}
   });
   el.addEventListener("pointercancel", () => clearTimeout(longPressTimer));
 
@@ -505,28 +545,22 @@ function createNoteElement(n) {
 
     bringToFront(el, n.id);
 
-    // if (activeNoteId === n.id) {
-    // already selected -> second click => edit
-    // ta.focus();
-    // } else {
-    // first click => just select
     activeNoteId = n.id;
     selectNote(el, n.id);
     openActionSheet(n.id);
     // }
   });
 
-  el.appendChild(ta);
+  el.appendChild(editorDiv);
   document.getElementById("boardArea").appendChild(el);
   notes[n.id] = el;
 
   // run initial auto-resize after element is in DOM so measurements are correct
   autoResize(false);
   // also persist if loaded content is taller than stored height
-  if ((n.height || 0) < ta.scrollHeight)
-    persistHeightDebounced(ta.scrollHeight);
+  if ((n.height || 0) < editorDiv.scrollHeight)
+    persistHeightDebounced(editorDiv.scrollHeight);
 
-  const snapGridSize = 20; // pixels to snap to
   // Make draggable only (no horizontal resizing) to keep width static
   interact(el)
     .draggable({
@@ -549,7 +583,7 @@ function createNoteElement(n) {
 
       listeners: {
         start(event) {
-          document.body.classList.add("dragging");  // disable text selection
+          document.body.classList.add("dragging"); // disable text selection
           bringToFront(event.target, n.id);
         },
         move(event) {
@@ -563,7 +597,7 @@ function createNoteElement(n) {
           target.setAttribute("data-y", dy);
         },
         end: async (event) => {
-          document.body.classList.remove("dragging");  // re-enable selection
+          document.body.classList.remove("dragging"); // re-enable selection
           const t = event.target;
           const dx = parseFloat(t.getAttribute("data-x")) || 0;
           const dy = parseFloat(t.getAttribute("data-y")) || 0;
@@ -588,8 +622,8 @@ function createNoteElement(n) {
         speed: 300, // px per second
       },
 
-      ignoreFrom: "textarea",
-      preventDefault: "always",
+      ignoreFrom: ".note-content",
+      // preventDefault: "always",
     })
     .resizable({
       edges: { left: false, right: true, bottom: false, top: false },
@@ -598,7 +632,12 @@ function createNoteElement(n) {
       modifiers: [
         interact.modifiers.snapSize({
           targets: snapEnabled
-            ? [interact.createSnapGrid({ width: snapGridSize, height: snapGridSize })]
+            ? [
+                interact.createSnapGrid({
+                  width: snapGridSize,
+                  height: snapGridSize,
+                }),
+              ]
             : [],
         }),
       ],
@@ -655,6 +694,7 @@ async function loadNotes() {
     width: 1,
     height: 1,
     color: "transparent",
+    dummy: true, // flag to skip full creation
   };
   createNoteElement(paddingNote);
 }
@@ -686,13 +726,14 @@ async function copyNote() {
 
   // Capture properties of the note
   clipboardNote = {
-    content: n.querySelector("textarea").value,
+    content: n.querySelector(".note-content").innerHTML,
     x: 0, // reset, we'll position on paste
     y: 0,
     width: parseFloat(n.style.width) || 220,
     height: parseFloat(n.style.height) || 30,
     color: n.style.background || "#FFF59D",
   };
+  console.log("Note copied to clipboard", clipboardNote);
 
   //   alert("Note copied! Switch boards and use Paste to insert.");
   closeActionSheet();
@@ -715,39 +756,6 @@ function closeActionSheet() {
   activeNoteId = null;
 }
 
-// async function changeColor() {
-//   if (!activeNoteId) return;
-//   const palette = [
-//     "#FFF59D",
-//     "#FFECB3",
-//     "#FFE0B2",
-//     "#FFCDD2",
-//     "#C8E6C9",
-//     "#BBDEFB",
-//     "#E1BEE7",
-//   ];
-//   const choice = prompt(
-//     "Enter hex color or type a number:\n" +
-//       palette.map((c, i) => `${i + 1}: ${c}`).join("\n"),
-//     palette[0]
-//   );
-//   if (!choice) return;
-//   let col = choice.trim();
-//   if (/^[1-9]$/.test(col)) col = palette[Number(col) - 1];
-//   if (!/^#([0-9A-F]{3}){1,2}$/i.test(col)) {
-//     alert("Invalid hex");
-//     return;
-//   }
-//   try {
-//     await api("/notes/" + activeNoteId, "PATCH", { color: col });
-//     const el = notes[activeNoteId];
-//     if (el) el.style.background = col;
-//   } catch (err) {
-//     console.error("Failed to change color", err);
-//   } finally {
-//     closeActionSheet();
-//   }
-// }
 
 function changeNoteColor() {
   if (!lastActiveNoteId) return;
@@ -765,9 +773,15 @@ function changeNoteColor() {
 
 async function deleteNote() {
   if (!activeNoteId) return;
-  if (notes[activeNoteId].childNodes[1].value) {
+
+  const noteEl = notes[activeNoteId];
+  const contentEl = noteEl.querySelector(".note-content");
+
+  // Only prompt if the note is non-empty
+  if (contentEl && contentEl.innerHTML.trim() !== "") {
     if (!confirm("Delete note?")) return;
   }
+  
   try {
     await api("/notes/" + activeNoteId, "DELETE");
     closeActionSheet();
@@ -842,7 +856,7 @@ window.addEventListener("keydown", (e) => {
 
   const tag = e.target.tagName;
   const isTextInput =
-    tag === "INPUT" || tag === "TEXTAREA" || e.target.isContentEditable;
+    tag === "INPUT" || tag === ".note-content" || e.target.isContentEditable;
 
   if (isTextInput) return; // skip hotkeys when typing
 
@@ -856,7 +870,7 @@ window.addEventListener("keydown", (e) => {
   if (e.key === "Backspace" || e.key === "Delete") {
     if (
       e.target.tagName === "INPUT" ||
-      e.target.tagName === "TEXTAREA" ||
+      e.target.tagName === ".note-content" ||
       e.target.isContentEditable
     ) {
       return; // don’t trigger delete
