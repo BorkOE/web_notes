@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Anteckningar</title>
+    <link rel="icon" type="image/x-icon" href="static/resources/favicon-32x32.png">
+    <link rel="stylesheet" href="/static/css/styles.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@simonwep/pickr/dist/themes/classic.min.css"/> <!-- 'classic' theme -->
+    
+
+
+</head>
+
+<body>
+    <header class="topbar">
+        <div id="boards" class="boards"></div>
+
+        <div class="topbar-actions">
+            <button id="addNoteBtn" class="icon-btn" title="New Note">➕</button>
+            <button id="settingsBtn" class="icon-btn" title="Settings">⚙️</button>
+            <!-- <div id="bgColorPickerContainer" class="pickr-container" style="display:inline-block; width:36px; height:36px; border:1px solid #605e5e; border-radius:4px; cursor:pointer;"></div> -->
+            <div class="bg-color-picker-wrapper">
+                 <div id="bgColorPickerContainer" class="pickr-container"></div>
+            </div>
+
+
+        </div>
+    </header>
+
+    <!-- Settings menu -->
+    <div id="settingsMenu" class="settings-menu hidden">
+        <div class="settings-content">
+            <button id="newBoardBtn">➕ New board</button>
+            <button id="renameBoardBtn">✏️ Rename board</button>
+            <button id="deleteBoardBtn">🗑 Delete board</button>
+            <button id="duplicateBoardBtn">📑 Duplicate board</button>
+            <button id="pasteNoteBtn">📋 Paste note</button>
+            <button id="recentlyDeletedBtn">🕑 Recently deleted</button>
+    
+            <hr>
+            <!-- Container for the color picker -->
+
+            <!-- <label>
+                🎨 Background color
+                <input type="color" id="bgColorPicker" />
+            </label> -->
+    
+            <label>
+                📐 Snapping
+                <input type="checkbox" id="snapToggle" />
+            </label>
+        </div>
+    </div>
+
+
+
+    <main id="boardArea" class="board-area"></main>
+
+
+    <!-- Bottom action sheet -->
+    <div id="actionSheet" class="action-sheet hidden">
+        <div class="sheet-content">
+            <div class="bg-color-picker-wrapper">
+                <div id="noteColorPickerContainer" class="pickr-container" ></div>
+            </div>
+            <button id="copyNoteBtn">Copy</button>
+            <button id="deleteNoteBtn">Delete</button>
+        </div>
+    </div>
+</body>
+    <script src="https://cdn.jsdelivr.net/npm/@simonwep/pickr"></script>
+    <script src="/static/js/interact.js"></script>
+    <script src="/static/js/app.js"></script>
+
+</html>

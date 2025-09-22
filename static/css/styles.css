@@ -1,0 +1,243 @@
+:root {
+    --bg: #f1f3f4;
+}
+
+html {
+    height: 100%;
+    margin: 0;
+}
+
+body {
+    margin: 0;
+    font-family: system-ui, Segoe UI, Roboto, 'Helvetica Neue', Arial;
+    background: var(--bg);
+    height: 100%;
+    /* height: 100vh; */
+    display: flex;
+    flex-direction: column
+}
+
+.topbar {
+    height: 56px;
+    background: #ffffff;
+    border-bottom: 1px solid #e6e6e6;
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    gap: 8px;
+    /* overflow: hidden; */
+}
+
+.boards {
+display: flex;
+    gap: 8px;
+    flex: 1;
+    align-items: center;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.boards::-webkit-scrollbar {
+    display: none; /* hide scrollbar for cleaner look */
+}
+
+.topbar-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.icon-btn {
+    background: none;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 6px;
+}
+
+.icon-btn:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+/* Settings menu (dropdown style) */
+.settings-menu {
+    position: fixed;
+    top: 56px;
+    right: 8px;
+    width: 220px;
+    max-height: 60vh;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+    overflow-y: auto;
+    z-index: 10000;
+}
+
+.settings-menu.hidden {
+    display: none;
+}
+
+.settings-content {
+    display: flex;
+    flex-direction: column;
+    padding: 8px;
+    gap: 8px;
+}
+
+.settings-content button,
+.settings-content label {
+    text-align: left;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 14px;
+}
+
+.settings-content button:hover,
+.settings-content label:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+.board-tab {
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: #f7f7f7;
+    cursor: pointer
+}
+
+.board-tab.active {
+    background: #e0f7fa
+}
+
+.board-area {
+    flex: 1;
+    position: relative;
+    overflow: auto;
+    min-height: calc(100vh - 56px);
+    /* padding-bottom: 70px; /* reserve space so notes never hide behind sheet */
+}
+
+.note {
+    position: absolute;
+    border: 2px solid transparent;
+    border-radius: 6px;
+    padding-top: 25px;
+    /* space for handle */
+    box-sizing: border-box;
+    touch-action: none;
+}
+
+.drag-handle {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 25px;
+    background: rgba(0, 0, 0, 0.05);
+    cursor: grab;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    pointer-events: auto;
+    touch-action: none;   /* disables panning/zooming on handle */
+}
+
+.note textarea {
+    width: 100%;
+    height: auto;
+    /* allow JS to set height */
+    min-height: 15px;
+    border: 0;
+    background: transparent;
+    resize: none;
+    outline: none;
+    font-size: 14px;
+    overflow: hidden;
+    /* hide internal scrollbars */
+    display: block;
+    box-sizing: border-box;
+}
+
+.note.selected {
+    outline: 2px solid #4285f4;
+    /* blue border highlight */
+}
+
+.action-sheet {
+    position: fixed;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.98);
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+    padding: 12px;
+    box-shadow: 0 -6px 12px rgba(0, 0, 0, 0.1);
+    transform: translateY(100%);
+    transition: transform 0.3s ease-in-out;
+    z-index: 9999;/* make sure it sits above notes */
+            
+}
+
+.action-sheet.visible {
+    transform: translateY(0);
+}
+
+.sheet-content {
+    display: flex;
+    align-items: center;
+    /* vertically align */
+    gap: 8px;
+    /* space between picker & buttons */
+}
+
+/* CSS */
+.bg-color-picker-wrapper {
+    width: 30px;
+    height: 30px;
+    border: 1px solid #b0aaaa;
+    border-radius: 4px;
+    cursor: pointer;
+
+    /* Centering */
+    display: flex;
+    align-items: center;
+    /* vertical */
+    justify-content: center;
+    /* horizontal */
+}
+
+.pickr-container {
+    width: 36px;
+    height: 36px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.bg-color-picker-wrapper {
+    display: flex;
+    align-items: center;
+}
+
+@media (max-width:600px) {
+    .topbar {
+        height: 48px
+    }
+}
+
+@media (max-width:600px) {
+  .board-area {
+    min-height: calc(100vh - 48px); /* topbar smaller on mobile */
+  }
+}
