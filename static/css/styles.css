@@ -329,6 +329,49 @@ body.dragging, .dragging * {
     will-change: auto !important;
 } */
 
+.mode-btn {
+    position: fixed;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    bottom: 20px;
+    right: 20px;
+    z-index: 9999;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    border: none;
+    background: #b2b2b2;
+    color: white;
+    font-size: 24px;
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.mode-btn:hover {
+    background: #909090;
+}
+
+#modeToggle {
+  -webkit-tap-highlight-color: transparent; /* remove iOS/Android blue highlight */
+  outline: none; 
+}
+
+#modeToggle:focus {
+  outline: none;
+  box-shadow: none;     /* also remove glow effect on some browsers */
+}
+
+.note,
+.note .note-content {
+    touch-action: pan-x pan-y;
+    /* allow vertical scroll gestures to start inside notes */
+    -webkit-overflow-scrolling: touch;
+}
+
+
+
 @media (max-width:600px) {
     .topbar {
         height: 48px

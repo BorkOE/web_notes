@@ -15,7 +15,6 @@ let lastActiveNoteId = null;
 let contextBoardId = null;  // Board ID for context menu actions
 let LONGPRESS_MS = 400;
 let snapGridSize = 20; // pixels to snap to
-// let currentProjectId = 1; // default to your first project
 
 async function api(path, method = "GET", body = null) {
   const opts = { method, headers: { "Content-Type": "application/json" } };
@@ -120,6 +119,36 @@ document.getElementById("boards").addEventListener("pointerdown", (e) => {
 document.addEventListener("pointerup", () => {
   clearTimeout(longPressTimer);
 });
+
+function applyModeToNotes() {
+  // Set contenteditable on note content and a touch-action to allow board scrolling from a note
+  Object.values(notes).forEach((el) => {
+    const editorDiv = el.querySelector(".note-content");
+    if (!editorDiv) return;
+
+    if (mode === "edit") {
+      editorDiv.setAttribute("contenteditable", "true");
+      editorDiv.style.touchAction = "none"; // let text interaction work
+      editorDiv.style.userSelect = "text";
+    } else {
+      editorDiv.setAttribute("contenteditable", "false");
+      // Allow vertical panning starting from inside a note
+      editorDiv.style.touchAction = "pan-y pan-x"; // allow scrolling
+      editorDiv.style.userSelect = "none";
+    }
+
+    // Try to enable/disable interact.js dragging/resizing per-note.
+    // interact().draggable accepts { enabled: true/false } in modern versions.
+    try {
+      interact(el).draggable({ enabled: mode === "edit" });
+      interact(el).resizable({ enabled: mode === "edit" });
+    } catch (e) {
+      // If your interact version doesn't support toggling like this,
+      // you can ignore or re-initialize interact on mode changes.
+    }
+  });
+}
+
 
 function showBoardContextMenu(tab, x, y) {
   const menu = document.getElementById("boardContextMenu");
@@ -475,10 +504,10 @@ function deselectAllNotes() {
 
 function createNoteElement(n) {
   const el = document.createElement("div");
-  
+
   el.className = "note";
   el.dataset.id = n.id;
-  
+
   _setElPositionSize(el, n);
 
   const editorDiv = document.createElement("div");
@@ -494,7 +523,6 @@ function createNoteElement(n) {
   editorDiv.addEventListener("blur", () => {
     el.classList.remove("focused");
   });
-
 
   // Initialize MediumEditor
   const editor = new MediumEditor(editorDiv, {
@@ -514,9 +542,11 @@ function createNoteElement(n) {
         "orderedlist",
       ],
     },
-  }).subscribe("editableClick", function (e) { if (e.target.href) { window.open(e.target.href) } })
-;
-
+  }).subscribe("editableClick", function (e) {
+    if (e.target.href) {
+      window.open(e.target.href);
+    }
+  });
   editor.subscribe("editableClick", function (e) {
     if (e.target.href) {
       window.open(e.target.href, "_blank");
@@ -536,8 +566,6 @@ function createNoteElement(n) {
     });
   });
 
-
-
   editorDiv.setAttribute("autocomplete", "off");
   editorDiv.setAttribute("autocorrect", "off");
   editorDiv.setAttribute("autocapitalize", "off");
@@ -546,24 +574,51 @@ function createNoteElement(n) {
   handle.className = "drag-handle";
   el.appendChild(handle);
 
-  // 1️⃣ Clicking/tapping the note content selects the note
+  // 1️⃣ Clicking/tapping the note content selects the note (only in edit mode)
   editorDiv.addEventListener("pointerdown", (ev) => {
-    // ev.stopPropagation(); // avoid board-level deselect
+    // If we're in scroll mode, don't select — let the event bubble so the board can scroll.
+    if (mode !== "edit") return;
+
+    // In edit mode: behave like before
     bringToFront(el, n.id);
     selectNote(el, n.id);
     openActionSheet(n.id);
     activeNoteId = n.id;
+
+    // prevent accidental page scroll while dragging text in edit mode
+    // but don't call preventDefault in scroll mode (we returned above)
+    // ev.preventDefault(); // optional — only if you find selection/scrolling conflicts
   });
 
-  // 2️⃣ Clicking/tapping the drag handle also selects the note
+  // 2️⃣ Clicking/tapping the drag handle also selects the note (only in edit mode)
   handle.addEventListener("pointerdown", (ev) => {
-    // ev.stopPropagation();
+    if (mode !== "edit") return;
+
     bringToFront(el, n.id);
     selectNote(el, n.id);
     openActionSheet(n.id);
     activeNoteId = n.id;
 
     editorDiv.blur(); // blur to prevent text editing while dragging
+  });
+
+  // click/tap behavior:
+  el.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+
+    // If we're in scroll mode, ignore clicks entirely so notes are not selected.
+    if (mode !== "edit") return;
+
+    if (longPressTriggered || isScrolling) {
+      longPressTriggered = false;
+      return; // don't open action sheet
+    }
+
+    bringToFront(el, n.id);
+
+    activeNoteId = n.id;
+    selectNote(el, n.id);
+    openActionSheet(n.id);
   });
 
   // 👉 blur textarea when starting drag
@@ -744,7 +799,6 @@ function createNoteElement(n) {
         margin: 50, // how close to the edge before scrolling starts
         speed: 300, // px per second
       },
-
     })
     .resizable({
       edges: { left: false, right: true, bottom: false, top: false },
@@ -810,15 +864,16 @@ async function loadNotes() {
 
   // Add invisible note at bottom-right to enable scrolling
   const paddingNote = {
-    id: 0,    // database starts at 1, so 0 is safe dummy
-    x: 2000,  // adjust width of scrollable area
-    y: 2000,  // adjust height of scrollable area
+    id: 0, // database starts at 1, so 0 is safe dummy
+    x: 2000, // adjust width of scrollable area
+    y: 2000, // adjust height of scrollable area
     width: 1,
     height: 1,
     color: "transparent",
     dummy: true, // flag to skip full creation
   };
   createNoteElement(paddingNote);
+  applyModeToNotes(); // 👈 ensure new notes respect mode
 }
 
 async function addNote() {
@@ -1042,6 +1097,54 @@ window.addEventListener("load", async () => {
     await selectBoard(boards[0].id);
   }
 });
+
+let mode = "edit"; // default
+
+const modeBtn = document.getElementById("modeToggle");
+modeBtn.onclick = () => {
+  if (mode === "scroll") {
+    mode = "edit";
+    modeBtn.textContent = "✏️";
+  } else {
+    mode = "scroll";
+    modeBtn.textContent = "✋";
+  }
+  console.log("Mode switched to:", mode);
+  applyModeToNotes(); // 👈 update all notes
+};
+modeBtn.click();
+modeBtn.click();
+
+modeBtn.onclick = () => {
+  if (mode === "scroll") {
+    mode = "edit";
+    modeBtn.textContent = "✏️";
+  } else {
+    mode = "scroll";
+    modeBtn.textContent = "✋";
+  }
+
+  console.log("Mode switched to:", mode);
+  localStorage.setItem("lastMode", mode); // ✅ persist mode
+  applyModeToNotes();
+};
+
+window.addEventListener("load", async () => {
+  // Restore last mode if exists
+  const savedMode = localStorage.getItem("lastMode");
+  if (savedMode) {
+    mode = savedMode;
+    if (mode === "edit") {
+      modeBtn.textContent = "✏️";
+    } else {
+      modeBtn.textContent = "✋";
+    }
+  }
+
+  applyModeToNotes();
+});
+
+
 
 
 function updateVH() {
