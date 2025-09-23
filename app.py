@@ -1,8 +1,8 @@
 from flask import Flask, render_template, jsonify, request, abort
-from models import db, Board, Note
+from models import db, Board, Note, Project
 import os
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static')
 BASE_DIR = os.path.dirname(__file__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(BASE_DIR, 'db.sqlite')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -13,36 +13,95 @@ db.init_app(app)
 # def create_tables():
 with app.app_context():
     db.create_all()
-    # create default board if none
+
+    # Ensure at least one project exists
+    if Project.query.count() == 0:
+        default_project = Project(name="Default Project")
+        db.session.add(default_project)
+        db.session.commit()
+    else:
+        default_project = Project.query.first()
+
+    # Ensure at least one board exists
     if Board.query.count() == 0:
-        b = Board(name='Default')
+        b = Board(name='Default', project=default_project)  # ✅ link to project
         db.session.add(b)
         db.session.commit()
 
+
 # --- ROUTES ---
+
 @app.route('/', methods=['GET'])
-def index():
-    return render_template('index.html')
+def project_index():
+    return render_template('project_index.html')
 
-# --- API ---
 
-@app.route('/api/boards')
-def list_boards():
-    boards = Board.query.order_by(Board.id).all()
+@app.route('/api/projects', methods=['GET'])
+def list_projects():
+    projects = Project.query.order_by(Project.id).all()
     return jsonify([
-        {
-            'id': b.id,
-            'name': b.name,
-            'background_color': b.background_color,
-            'snapping': b.snapping,
-        } for b in boards
+        {"id": p.id, "name": p.name, "pin": p.pin}
+        for p in projects
     ])
 
-@app.route('/api/boards', methods=['POST'])
-def create_board():
+
+@app.route('/api/projects/<int:project_id>', methods=['GET'])
+def get_project(project_id):
+    project = Project.query.get_or_404(project_id)
+    return jsonify({
+        "id": project.id,
+        "name": project.name,
+        "pin": bool(project.pin)
+    })
+
+
+@app.route('/api/projects', methods=['POST'])
+def create_project():
+    data = request.json or {}
+    name = data.get("name")
+    if not name:
+        abort(400, "Project name required")
+    pin = data.get("pin")
+    project = Project(name=name, pin=pin)
+    db.session.add(project)
+    db.session.commit()
+    return jsonify({"id": project.id, "name": project.name, "pin": bool(project.pin)}), 201
+
+@app.route('/project/<name>')
+@app.route('/project/<name>/<pin>')
+def open_project(name, pin=None):
+    project = Project.query.filter_by(name=name).first_or_404()
+    if project.pin and project.pin != pin:
+        abort(403, "Invalid PIN")
+    # render your existing notes app with project context
+    return render_template("index.html", project_id=project.id)
+
+
+@app.route('/api/projects/<int:project_id>', methods=['PATCH'])
+def update_project(project_id):
+    project = Project.query.get_or_404(project_id)
+    data = request.json or {}
+    if 'name' in data:
+        project.name = data['name']
+    db.session.commit()
+    return jsonify({'id': project.id, 'name': project.name})
+
+
+@app.route('/api/projects/<int:project_id>/boards')
+def list_boards(project_id):
+    project = Project.query.get_or_404(project_id)
+    boards = project.boards
+    return jsonify([
+        {"id": b.id, "name": b.name, "background_color": b.background_color, "snapping": b.snapping}
+        for b in boards
+    ])
+
+@app.route('/api/projects/<int:project_id>/boards', methods=['POST'])
+def create_board(project_id):
+    project = Project.query.get_or_404(project_id)
     data = request.json or {}
     name = data.get('name', 'Untitled')
-    b = Board(name=name)
+    b = Board(name=name, project=project)
     db.session.add(b)
     db.session.commit()
     return jsonify({'id': b.id, 'name': b.name}), 201
@@ -99,7 +158,8 @@ def duplicate_board(board_id):
     new_board = Board(
         name=f"{board.name} (copy)",
         background_color=board.background_color,
-        snapping=board.snapping
+        snapping=board.snapping,
+        project_id=board.project_id  # 👈 ensure it belongs to the same project
     )
 
     db.session.add(new_board)

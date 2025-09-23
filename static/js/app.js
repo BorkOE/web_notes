@@ -15,6 +15,7 @@ let lastActiveNoteId = null;
 let contextBoardId = null;  // Board ID for context menu actions
 let LONGPRESS_MS = 400;
 let snapGridSize = 20; // pixels to snap to
+// let currentProjectId = 1; // default to your first project
 
 async function api(path, method = "GET", body = null) {
   const opts = { method, headers: { "Content-Type": "application/json" } };
@@ -42,8 +43,12 @@ const snapToggle = document.getElementById("snapToggle"); // toggle button in me
 
 newBoardBtn.addEventListener("click", async () => {
   const name = prompt("Board name?", "Untitled");
+  if (!name) return;
+
   try {
-    const res = await api("/boards", "POST", { name });
+    // ✅ Include currentProjectId in the URL
+    const res = await api(`/projects/${currentProjectId}/boards`, "POST", { name });
+
     // Reload boards and switch to the new one
     await loadBoards();
     selectBoard(res.id);
@@ -52,6 +57,7 @@ newBoardBtn.addEventListener("click", async () => {
     console.error(err);
   }
 });
+
 
 snapToggle.addEventListener("click", () => {
   if (snapToggle.checked) {
@@ -169,6 +175,31 @@ document.getElementById("duplicateBoardFromMenuBtn").addEventListener("click", a
   closeBoardContextMenu();
 });
 
+// Rename project from settings menu
+const renameProjectBtn = document.getElementById("renameProjectFromMenuBtn");
+if (renameProjectBtn) {
+  renameProjectBtn.addEventListener("click", async () => {
+    try {
+      // Fetch current project info so we can prefill its name
+      const project = await api(`/projects/${currentProjectId}`);
+      const newName = prompt("Enter new project name:", project.name);
+      if (!newName || newName.trim() === "") return;
+
+      await api(`/projects/${currentProjectId}`, "PATCH", { name: newName });
+
+      // Optionally: update UI
+      document.title = newName; // update browser tab title
+      const projectNameEl = document.getElementById("projectName");
+      if (projectNameEl) projectNameEl.textContent = newName;
+
+      alert("Project renamed successfully!");
+    } catch (err) {
+      console.error("Failed to rename project:", err);
+      alert("Failed to rename project");
+    }
+  });
+}
+
 
 if (copyNoteBtn) copyNoteBtn.addEventListener("click", copyNote);
 if (pasteNoteBtn) pasteNoteBtn.addEventListener("click", pasteNote);
@@ -285,7 +316,7 @@ noteColorPickr.on("change", async (color) => {
 
 // Set initial color when loading the board
 async function updateBoardBackgroundColor(boardId) {
-  const boards = await api("/boards");
+  const boards = await api(`/projects/${currentProjectId}/boards`);
   const board = boards.find((b) => b.id === boardId);
   if (board) {
     // bgColorPicker.value = board.background_color || "#FFFFFF";
@@ -320,7 +351,7 @@ async function pasteNote() {
 
 
 async function loadBoards() {
-  const bs = await api("/boards");
+  const bs = await api(`/projects/${currentProjectId}/boards`);
   const container = document.getElementById("boards");
   container.innerHTML = "";
   bs.forEach((b) => {
@@ -352,7 +383,7 @@ async function loadBoards() {
 
 async function createBoard() {
   const name = prompt("Board name") || "Untitled";
-  const b = await api("/boards", "POST", { name });
+  const b = await api(`/projects/${currentProjectId}/boards`, "POST", { name });
   await selectBoard(b.id);
   await loadBoards();
 }
@@ -365,7 +396,7 @@ async function selectBoard(id) {
 
   await loadBoards();
 
-  const boards = await api("/boards");
+  const boards = await api(`/projects/${currentProjectId}/boards`);
   const current = boards.find(b => b.id === id);
   if (current) {
     snapEnabled = current.snapping;
@@ -745,7 +776,8 @@ function clearBoardArea() {
 async function loadNotes() {
   if (!currentBoardId) return;
   clearBoardArea();
-  const data = await api("/boards/" + currentBoardId + "/notes");
+  const data = await api(`/boards/${currentBoardId}/notes`);
+
   data.forEach(createNoteElement);
 
   // Add invisible note at bottom-right to enable scrolling
@@ -972,7 +1004,7 @@ window.addEventListener("load", async () => {
   if (deleteNoteBtn) deleteNoteBtn.addEventListener("click", deleteNote);
 
   await loadBoards();
-  const boards = await api("/boards");
+  const boards = await api(`/projects/${currentProjectId}/boards`);
 
   // Try to restore last selected board
   const lastBoardId = localStorage.getItem("lastBoardId");

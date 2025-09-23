@@ -1,0 +1,286 @@
+<!doctype html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Projects Dashboard</title>
+    <!-- 👇 This makes the page scale properly on mobile -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <style>
+        body {
+            font-family: sans-serif;
+            max-width: 1000px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2em;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 20px;
+        }
+
+        .project-card {
+            border-radius: 10px;
+            padding: 20px;
+            background: #f0f0f0;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+            cursor: pointer;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .project-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 5px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .board-preview {
+            height: 80px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            background: #ffffff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #999;
+            font-size: 12px;
+            text-align: center;
+            padding: 4px;
+            word-break: break-word;
+        }
+
+        .project-name {
+            font-weight: bold;
+            font-size: 16px;
+            margin-bottom: 5px;
+            text-align: center;
+            word-break: break-word;
+        }
+
+        .pin-label {
+            font-size: 12px;
+            color: #c33;
+            text-align: center;
+        }
+
+        .create-btn {
+            display: block;
+            width: 100%;
+            margin: 30px auto 0;
+            padding: 10px;
+            font-size: 16px;
+            border-radius: 8px;
+            border: none;
+            background: #4CAF50;
+            color: white;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+
+        .create-btn:hover {
+            background: #45a049;
+        }
+
+        /* PIN modal */
+        .pin-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.4);
+            justify-content: center;
+            align-items: center;
+            padding: 15px;
+        }
+
+        .pin-modal .content {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            width: 100%;
+            max-width: 320px;
+            /* keeps modal readable on phones */
+        }
+
+        .pin-modal input {
+            padding: 6px 10px;
+            margin: 6px 0;
+            width: 90%;
+            font-size: 14px;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 600px) {
+            body {
+                margin: 20px auto;
+                padding: 0 10px;
+            }
+
+            h1 {
+                font-size: 1.5em;
+            }
+
+            .grid {
+                grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+                gap: 15px;
+            }
+
+            .board-preview {
+                height: 60px;
+                font-size: 11px;
+            }
+
+            .project-name {
+                font-size: 14px;
+            }
+
+            .create-btn {
+                font-size: 14px;
+                padding: 8px;
+            }
+        }
+
+        @media (max-width: 400px) {
+            .grid {
+                grid-template-columns: 1fr;
+                /* one card per row */
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Projects Dashboard</h1>
+
+    <div class="grid" id="projectGrid"></div>
+    <button class="create-btn" id="openCreateForm">+ New Project</button>
+
+    <!-- PIN Modal -->
+    <div class="pin-modal" id="pinModal">
+        <div class="content">
+            <p id="pinProjectName"></p>
+            <input type="password" id="pinInput" placeholder="Enter PIN" />
+            <button id="pinSubmit">Open</button>
+            <button id="pinCancel">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Create Project Modal -->
+    <div class="pin-modal" id="createModal">
+        <div class="content">
+            <h2>Create New Project</h2>
+            <input type="text" id="newProjectName" placeholder="Project Name" required /><br>
+            <input type="text" id="newProjectPin" placeholder="Optional PIN" /><br>
+            <button id="createSubmit">Create</button>
+            <button id="createCancel">Cancel</button>
+        </div>
+    </div>
+
+    <script>
+        const projectGrid = document.getElementById("projectGrid");
+        const pinModal = document.getElementById("pinModal");
+        const pinProjectName = document.getElementById("pinProjectName");
+        const pinInput = document.getElementById("pinInput");
+        let pinTargetUrl = null;
+
+        const createModal = document.getElementById("createModal");
+        const newProjectName = document.getElementById("newProjectName");
+        const newProjectPin = document.getElementById("newProjectPin");
+
+        async function loadProjects() {
+            projectGrid.innerHTML = '';
+            const res = await fetch('/api/projects');
+            const projects = await res.json();
+
+            for (let p of projects) {
+                const card = document.createElement('div');
+                card.className = 'project-card';
+
+                // Board preview (use first board if available)
+                const boardRes = await fetch(`/api/projects/${p.id}/boards`);
+                const boards = await boardRes.json();
+
+                // Project name + PIN label
+                const nameDiv = document.createElement('div');
+                nameDiv.className = 'project-name';
+                nameDiv.textContent = p.name;
+                card.appendChild(nameDiv);
+
+                if (p.pin) {
+                    const pinDiv = document.createElement('div');
+                    pinDiv.className = 'pin-label';
+                    pinDiv.textContent = '🔒';
+                    card.appendChild(pinDiv);
+
+                    card.onclick = () => {
+                        pinProjectName.textContent = `Enter PIN for "${p.name}"`;
+                        pinModal.style.display = "flex";
+                        pinInput.value = '';
+                        pinInput.focus();
+                        pinTargetUrl = `/project/${encodeURIComponent(p.name)}`;
+                    };
+                } else {
+                    card.onclick = () => {
+                        window.location.href = `/project/${encodeURIComponent(p.name)}`;
+                    };
+                }
+
+                projectGrid.appendChild(card);
+            }
+        }
+
+        // PIN modal logic
+        document.getElementById("pinSubmit").onclick = () => {
+            const pin = pinInput.value.trim();
+            if (!pin) return;
+            window.location.href = pinTargetUrl + '/' + encodeURIComponent(pin);
+        };
+        document.getElementById("pinCancel").onclick = () => { pinModal.style.display = "none"; };
+        pinModal.onclick = (e) => { if (e.target === pinModal) pinModal.style.display = "none"; };
+
+        // Create modal logic
+        document.getElementById("openCreateForm").onclick = () => {
+            createModal.style.display = "flex";
+            newProjectName.value = '';
+            newProjectPin.value = '';
+            newProjectName.focus();
+        };
+        document.getElementById("createCancel").onclick = () => { createModal.style.display = "none"; };
+        createModal.onclick = (e) => { if (e.target === createModal) createModal.style.display = "none"; };
+
+        document.getElementById("createSubmit").onclick = async () => {
+            let name = newProjectName.value.trim();
+            let pin = newProjectPin.value.trim();
+            if (!name) return;
+            const res = await fetch('/api/projects', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, pin: pin || null })
+            });
+            if (res.ok) {
+                createModal.style.display = 'none';
+                loadProjects();
+            } else {
+                alert("Failed to create project");
+            }
+        };
+
+        // Initial load
+        loadProjects();
+    </script>
+</body>
+
+</html>

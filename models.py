@@ -4,14 +4,23 @@ from flask_sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
 
+class Project(db.Model):
+    __tablename__ = 'projects'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False, unique=True)
+    pin = db.Column(db.String(20), nullable=True)  # optional PIN
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    boards = db.relationship('Board', backref='project', cascade='all, delete-orphan')
 
 class Board(db.Model):
     __tablename__ = 'boards'
     id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('projects.id'), nullable=False)  # 👈 new link
     name = db.Column(db.String(120), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     background_color = db.Column(db.String(7), default="#FFFFFF")
-    snapping = db.Column(db.Boolean, default=False)  # 👈 NEW
+    snapping = db.Column(db.Boolean, default=False)
     notes = db.relationship('Note', backref='board', cascade='all, delete-orphan')
 
 class Note(db.Model):

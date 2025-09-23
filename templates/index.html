@@ -5,13 +5,17 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Anteckningar</title>
-    <link rel="icon" type="image/x-icon" href="static/resources/favicon-32x32.png">
-    <link rel="stylesheet" href="/static/css/styles.css" />
-    <link rel="stylesheet" href="/static/css/classic.min.css"/>
-    <link rel="stylesheet" href="/static/css/medium-editor.min.css">
-    <link rel="stylesheet" href="/static/css/default.min.css">
-    <script src="static/js/medium-editor.min.js"></script>
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='resources/favicon-32x32.png') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/classic.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/default.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/medium-editor.min.css') }}">
+    <script src="{{ url_for('static', filename='js/medium-editor.min.js') }}"></script>
+    <script>
+        let currentProjectId = {{ project_id }};
+    </script>
 
+    
 
 
 </head>
@@ -37,12 +41,14 @@
             <button id="newBoardBtn">➕ New board</button>
             <button id="pasteNoteBtn">📋 Paste note</button>
             <button id="recentlyDeletedBtn">🕑 Recently deleted</button>
-    
-            <hr>    
+            <button id="renameProjectFromMenuBtn">⚜️ Rename project</button>
             <label>
                 📐 Snapping
                 <input type="checkbox" id="snapToggle" />
             </label>
+            <form action="http://192.168.1.14:1906/">
+                <input type="submit" value=">❌ Close project" />
+            </form>
         </div>
     </div>
 
@@ -52,7 +58,6 @@
             <button id="renameBoardFromMenuBtn">✏️ Rename board</button>
             <button id="duplicateBoardFromMenuBtn">📑 Duplicate board</button>
             <button id="deleteBoardFromMenuBtn">🗑 Delete board</button>
-            <!-- Later: Move left/right -->
         </div>
     </div>
 
@@ -72,8 +77,9 @@
 
     
 </body>
-    <script src="https://cdn.jsdelivr.net/npm/@simonwep/pickr"></script>
-    <script src="/static/js/interact.js"></script>
-    <script src="/static/js/app.js"></script>
+    <!-- <script src="https://cdn.jsdelivr.net/npm/@simonwep/pickr"></script> -->
+    <script src="{{ url_for('static', filename='js/pickr.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/interact.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 
 </html>
