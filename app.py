@@ -11,22 +11,23 @@ db.init_app(app)
 
 # @app.before_first_request
 # def create_tables():
-with app.app_context():
-    db.create_all()
+if __name__ == '__main__':
+    with app.app_context():
+        db.create_all()
 
-    # Ensure at least one project exists
-    if Project.query.count() == 0:
-        default_project = Project(name="Default Project")
-        db.session.add(default_project)
-        db.session.commit()
-    else:
-        default_project = Project.query.first()
+        # Ensure at least one project exists
+        if Project.query.count() == 0:
+            default_project = Project(name="Default Project")
+            db.session.add(default_project)
+            db.session.commit()
+        else:
+            default_project = Project.query.first()
 
-    # Ensure at least one board exists
-    if Board.query.count() == 0:
-        b = Board(name='Default', project=default_project)  # ✅ link to project
-        db.session.add(b)
-        db.session.commit()
+        # Ensure at least one board exists
+        if Board.query.count() == 0:
+            b = Board(name='Default', project=default_project)  # ✅ link to project
+            db.session.add(b)
+            db.session.commit()
 
 
 # --- ROUTES ---
@@ -59,9 +60,17 @@ def get_project(project_id):
 def create_project():
     data = request.json or {}
     name = data.get("name")
+
     if not name:
         abort(400, "Project name required")
+    
     pin = data.get("pin")
+    if pin and len(pin) != 4:
+        abort(400, "PIN must be exactly 4 digits")
+
+    if pin and not pin.isdigit():
+        abort(400, "PIN must only contain digits")
+
     project = Project(name=name, pin=pin)
     db.session.add(project)
     db.session.commit()
@@ -73,7 +82,10 @@ def open_project(name, pin=None):
     project = Project.query.filter_by(name=name).first_or_404()
     if project.pin and project.pin != pin:
         abort(403, "Invalid PIN")
-    # render your existing notes app with project context
+
+    if request.method == "HEAD":
+        return "", 200  # lightweight check
+
     return render_template("index.html", project_id=project.id)
 
 
@@ -180,6 +192,27 @@ def duplicate_board(board_id):
 
     db.session.commit()
     return jsonify({"id": new_board.id, "name": new_board.name}), 201
+
+@app.route('/api/boards/<int:board_id>/move', methods=['PATCH'])
+def move_board(board_id):
+    board = Board.query.get_or_404(board_id)
+    data = request.json or {}
+    new_project_id = data.get("project_id")
+    if not new_project_id:
+        abort(400, "project_id required")
+
+    project = Project.query.get(new_project_id)
+    if not project:
+        abort(404, "Target project not found")
+
+    board.project_id = new_project_id
+    db.session.commit()
+    return jsonify({
+        "status": "ok",
+        "id": board.id,
+        "project_id": board.project_id
+    })
+
 
 @app.route('/api/boards/<int:board_id>/notes')
 def get_notes(board_id):

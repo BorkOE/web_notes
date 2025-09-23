@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="utf-8">
-    <title>Projects Dashboard</title>
+    <title>Anteckningsböcker</title>
     <!-- 👇 This makes the page scale properly on mobile -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
@@ -163,16 +163,16 @@
 </head>
 
 <body>
-    <h1>Projects Dashboard</h1>
+    <h1>Anteckningsböcker</h1>
 
     <div class="grid" id="projectGrid"></div>
-    <button class="create-btn" id="openCreateForm">+ New Project</button>
+    <button class="create-btn" id="openCreateForm">+ Ny anteckningsbok</button>
 
     <!-- PIN Modal -->
     <div class="pin-modal" id="pinModal">
         <div class="content">
             <p id="pinProjectName"></p>
-            <input type="password" id="pinInput" placeholder="Enter PIN" />
+            <input type="tel" id="pinInput" placeholder="PIN:" inputmode="numeric" pattern="[0-9]*" maxlength="4" />
             <button id="pinSubmit">Open</button>
             <button id="pinCancel">Cancel</button>
         </div>
@@ -181,11 +181,11 @@
     <!-- Create Project Modal -->
     <div class="pin-modal" id="createModal">
         <div class="content">
-            <h2>Create New Project</h2>
-            <input type="text" id="newProjectName" placeholder="Project Name" required /><br>
-            <input type="text" id="newProjectPin" placeholder="Optional PIN" /><br>
-            <button id="createSubmit">Create</button>
-            <button id="createCancel">Cancel</button>
+            <h2>Skapa ny anteckningsbok</h2>
+            <input type="text" id="newProjectName" placeholder="Namn" required /><br>
+            <input type="text" id="newProjectPin" placeholder="Valfri PIN (4 siffror)" /><br>
+            <button id="createSubmit">Skapa</button>
+            <button id="createCancel">Avbryt</button>
         </div>
     </div>
 
@@ -195,6 +195,7 @@
         const pinProjectName = document.getElementById("pinProjectName");
         const pinInput = document.getElementById("pinInput");
         let pinTargetUrl = null;
+        
 
         const createModal = document.getElementById("createModal");
         const newProjectName = document.getElementById("newProjectName");
@@ -226,7 +227,7 @@
                     card.appendChild(pinDiv);
 
                     card.onclick = () => {
-                        pinProjectName.textContent = `Enter PIN for "${p.name}"`;
+                        pinProjectName.textContent = `${p.name}`;
                         pinModal.style.display = "flex";
                         pinInput.value = '';
                         pinInput.focus();
@@ -242,24 +243,86 @@
             }
         }
 
-        // PIN modal logic
-        document.getElementById("pinSubmit").onclick = () => {
-            const pin = pinInput.value.trim();
-            if (!pin) return;
-            window.location.href = pinTargetUrl + '/' + encodeURIComponent(pin);
-        };
-        document.getElementById("pinCancel").onclick = () => { pinModal.style.display = "none"; };
-        pinModal.onclick = (e) => { if (e.target === pinModal) pinModal.style.display = "none"; };
+    // Elements
+    const pinError = document.createElement("div");
+    pinError.style.color = "red";
+    pinError.style.fontSize = "13px";
+    pinError.style.marginTop = "6px";
+    document.querySelector("#pinModal .content").appendChild(pinError);
 
-        // Create modal logic
-        document.getElementById("openCreateForm").onclick = () => {
-            createModal.style.display = "flex";
-            newProjectName.value = '';
-            newProjectPin.value = '';
-            newProjectName.focus();
-        };
-        document.getElementById("createCancel").onclick = () => { createModal.style.display = "none"; };
-        createModal.onclick = (e) => { if (e.target === createModal) createModal.style.display = "none"; };
+    async function tryOpenProject() {
+        const pin = pinInput.value.trim();
+        if (!pin) return;
+
+        pinError.textContent = ""; // clear old error
+
+        try {
+            const res = await fetch(pinTargetUrl + "/" + encodeURIComponent(pin), {
+                method: "HEAD"   // just check if accessible
+            });
+
+            if (res.ok) {
+                pinModal.style.display = "none";
+                window.location.href = pinTargetUrl + "/" + encodeURIComponent(pin);
+            } else {
+                pinError.textContent = "❌ Wrong PIN, try again.";
+                pinInput.focus();
+            }
+        } catch (err) {
+            pinError.textContent = "❌ Server error, try again.";
+        }
+    }
+
+    // PIN modal logic
+    document.getElementById("pinSubmit").onclick = tryOpenProject;
+    document.getElementById("pinCancel").onclick = () => {
+        pinModal.style.display = "none";
+        pinError.textContent = "";
+    };
+
+    // Enter key = submit
+    pinInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            tryOpenProject();
+        }
+    });
+
+    // Open "Create Project" modal
+    document.getElementById("openCreateForm").onclick = () => {
+        createModal.style.display = "flex";
+        newProjectName.value = '';
+        newProjectPin.value = '';
+        newProjectName.focus();
+    };
+
+    // Cancel modal
+    document.getElementById("createCancel").onclick = () => {
+        createModal.style.display = "none";
+    };
+
+    // Click outside modal to close
+    createModal.onclick = (e) => {
+        if (e.target === createModal) createModal.style.display = "none";
+    };
+
+    // Optional: Enter key submits the form
+    [newProjectName, newProjectPin].forEach(input => {
+        input.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                document.getElementById("createSubmit").click();
+            }
+        });
+    });
+
+    pinInput.addEventListener("input", () => {
+            const pin = pinInput.value.trim();
+            if (pin.length === 4) {
+                tryOpenProject(); // automatically submit when 4 digits entered
+            }
+        });
+
 
         document.getElementById("createSubmit").onclick = async () => {
             let name = newProjectName.value.trim();

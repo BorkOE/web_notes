@@ -200,6 +200,34 @@ if (renameProjectBtn) {
   });
 }
 
+document.getElementById("moveBoardFromMenuBtn").addEventListener("click", async () => {
+  if (!contextBoardId) return;
+
+  try {
+    // Fetch all projects so user can choose
+    const projects = await api("/projects");
+    const choices = projects.map(p => `${p.id}: ${p.name}`).join("\n");
+
+    const input = prompt("Move board to project (enter ID):\n" + choices);
+    if (!input) return;
+
+    const targetId = parseInt(input);
+    if (isNaN(targetId)) return alert("Invalid project ID");
+
+    await api(`/boards/${contextBoardId}/move`, "PATCH", { project_id: targetId });
+
+    alert("Board moved!");
+    closeBoardContextMenu();
+
+    // reload boards for the *current project only*
+    await loadBoards();
+
+  } catch (err) {
+    console.error("Failed to move board", err);
+    alert("Failed to move board");
+  }
+});
+
 
 if (copyNoteBtn) copyNoteBtn.addEventListener("click", copyNote);
 if (pasteNoteBtn) pasteNoteBtn.addEventListener("click", pasteNote);
@@ -662,11 +690,11 @@ function createNoteElement(n) {
 
       inertia: false,
       modifiers: [
-        interact.modifiers.restrictRect({
-          restriction: "#boardArea", // stay inside board
-          endOnly: true,
-          elementRect: { top: 0, left: 0, bottom: 1, right: 0 },
-        }),
+        // interact.modifiers.restrictRect({
+        //   restriction: "#boardArea", // stay inside board
+        //   endOnly: true,
+        //   elementRect: { top: 0, left: 0, bottom: 1, right: 0 },
+        // }),
         interact.modifiers.snap({
           targets: snapEnabled
             ? [interact.createSnapGrid({ x: snapGridSize, y: snapGridSize })]
