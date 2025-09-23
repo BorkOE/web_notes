@@ -76,7 +76,6 @@ def reorder_boards():
     db.session.commit()
     return jsonify({"status": "ok"})
 
-
 @app.route('/api/boards/<int:board_id>', methods=['DELETE'])
 def delete_board(board_id):
     board = Board.query.get_or_404(board_id)
@@ -122,20 +121,6 @@ def duplicate_board(board_id):
     db.session.commit()
     return jsonify({"id": new_board.id, "name": new_board.name}), 201
 
-# @app.route('/api/boards/<int:board_id>', methods=['PATCH'])
-# def rename_board(board_id):
-#     print("Renaming board to:", new_name)
-#     board = Board.query.get_or_404(board_id)
-#     data = request.json or {}
-#     new_name = data.get("name")
-#     if not new_name:
-#         abort(400, "name required")
-
-#     board.name = new_name
-#     db.session.commit()
-#     return jsonify({"id": board.id, "name": board.name})
-
-
 @app.route('/api/boards/<int:board_id>/notes')
 def get_notes(board_id):
     board = Board.query.get_or_404(board_id)
@@ -174,6 +159,9 @@ def create_note():
 
 @app.route('/api/notes/<int:note_id>', methods=['PATCH'])
 def update_note(note_id):
+    if note_id == 0:  # dummy note for scrolling
+        return jsonify({'status': 'ok'})
+    
     n = Note.query.get_or_404(note_id)
     data = request.json or {}
     for k in ('content', 'x', 'y', 'width', 'height', 'color', 'z_index',

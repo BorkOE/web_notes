@@ -16,8 +16,6 @@ let contextBoardId = null;  // Board ID for context menu actions
 let LONGPRESS_MS = 400;
 let snapGridSize = 20; // pixels to snap to
 
-
-
 async function api(path, method = "GET", body = null) {
   const opts = { method, headers: { "Content-Type": "application/json" } };
   if (body) opts.body = JSON.stringify(body);
@@ -86,6 +84,7 @@ document.getElementById("boards").addEventListener("pointerdown", (e) => {
 
   longPressTimer = setTimeout(() => {
     contextBoardId = parseInt(tab.dataset.id);
+    selectBoard(contextBoardId);
     showBoardContextMenu(tab, e.pageX, e.pageY);
     longPressTriggered = true;
   }, LONGPRESS_MS);
@@ -216,6 +215,11 @@ pickr.on("change", async (color) => {
   } catch (err) {
     console.error("Failed to save board color", err);
   }
+  // ✅ Update the border of the active tab
+  const tab = document.querySelector(`.board-tab[data-id='${currentBoardId}']`);
+  if (tab) {
+    tab.style.border = `4px solid ${hex}`;
+  }
   pickr.applyColor();
 });
 
@@ -324,6 +328,14 @@ async function loadBoards() {
     el.className = "board-tab" + (currentBoardId === b.id ? " active" : "");
     el.textContent = b.name;
     el.dataset.id = b.id;
+
+    // ✅ Add border color based on board background
+    if (b.background_color) {
+      el.style.border = `4px solid ${b.background_color}`;
+    } else {
+      el.style.border = "4px solid transparent";
+    }
+
     el.onclick = (e) => {
       if (longPressTriggered) {
         e.stopImmediatePropagation();
@@ -347,20 +359,21 @@ async function createBoard() {
 
 async function selectBoard(id) {
   currentBoardId = id;
-  // await loadNotes();
+
+  // Save selected board in localStorage
+  localStorage.setItem("lastBoardId", id);
+
   await loadBoards();
 
-  const boards = await api("/boards"); // already returns snapping
+  const boards = await api("/boards");
   const current = boards.find(b => b.id === id);
   if (current) {
-    snapEnabled = current.snapping; // ✅ sync global
+    snapEnabled = current.snapping;
     snapToggle.checked = snapEnabled;
-    // applySnapping(snapEnabled);
-    await loadNotes(); // ensure notes re-render with correct snapping
+    await loadNotes();
   }
 
   await updateBoardBackgroundColor(currentBoardId);
-
 }
 
 function _setElPositionSize(el, n) {
@@ -408,9 +421,6 @@ function createNoteElement(n) {
   el.dataset.id = n.id;
   
   _setElPositionSize(el, n);
-  if (n.dummy) {
-    return;
-  } // skip rest for dummy note
 
   const editorDiv = document.createElement("div");
   editorDiv.className = "note-content";
@@ -418,9 +428,18 @@ function createNoteElement(n) {
   editorDiv.innerHTML = n.content || "";
   editorDiv.setAttribute("contenteditable", "true");
 
+  editorDiv.addEventListener("focus", () => {
+    el.classList.add("focused");
+  });
+
+  editorDiv.addEventListener("blur", () => {
+    el.classList.remove("focused");
+  });
+
+
   // Initialize MediumEditor
   const editor = new MediumEditor(editorDiv, {
-    placeholder: { text: "Type your note..." },
+    placeholder: { text: "..." },
     toolbar: {
       buttons: [
         "bold",
@@ -436,7 +455,29 @@ function createNoteElement(n) {
         "orderedlist",
       ],
     },
+  }).subscribe("editableClick", function (e) { if (e.target.href) { window.open(e.target.href) } })
+;
+
+  editor.subscribe("editableClick", function (e) {
+    if (e.target.href) {
+      window.open(e.target.href, "_blank");
+    }
   });
+
+  editorDiv.addEventListener("touchend", (e) => {
+    const a = e.target.closest("a");
+    if (a && a.href) {
+      window.open(a.href, "_blank");
+    }
+  });
+
+  editor.subscribe("editableInput", () => {
+    editorDiv.querySelectorAll("a").forEach((a) => {
+      a.setAttribute("contenteditable", "false");
+    });
+  });
+
+
 
   editorDiv.setAttribute("autocomplete", "off");
   editorDiv.setAttribute("autocorrect", "off");
@@ -445,6 +486,26 @@ function createNoteElement(n) {
   const handle = document.createElement("div");
   handle.className = "drag-handle";
   el.appendChild(handle);
+
+  // 1️⃣ Clicking/tapping the note content selects the note
+  editorDiv.addEventListener("pointerdown", (ev) => {
+    // ev.stopPropagation(); // avoid board-level deselect
+    bringToFront(el, n.id);
+    selectNote(el, n.id);
+    openActionSheet(n.id);
+    activeNoteId = n.id;
+  });
+
+  // 2️⃣ Clicking/tapping the drag handle also selects the note
+  handle.addEventListener("pointerdown", (ev) => {
+    // ev.stopPropagation();
+    bringToFront(el, n.id);
+    selectNote(el, n.id);
+    openActionSheet(n.id);
+    activeNoteId = n.id;
+
+    editorDiv.blur(); // blur to prevent text editing while dragging
+  });
 
   // 👉 blur textarea when starting drag
   handle.addEventListener("pointerdown", () => {
@@ -565,6 +626,9 @@ function createNoteElement(n) {
   interact(el)
     .draggable({
       allowFrom: ".drag-handle", // only drag from handle
+      // ignoreFrom: ".note-content",
+      preventDefault: "always",
+
       inertia: false,
       modifiers: [
         interact.modifiers.restrictRect({
@@ -622,8 +686,6 @@ function createNoteElement(n) {
         speed: 300, // px per second
       },
 
-      ignoreFrom: ".note-content",
-      // preventDefault: "always",
     })
     .resizable({
       edges: { left: false, right: true, bottom: false, top: false },
@@ -688,7 +750,7 @@ async function loadNotes() {
 
   // Add invisible note at bottom-right to enable scrolling
   const paddingNote = {
-    id: "dummy-scroll-note",
+    id: 0,    // database starts at 1, so 0 is safe dummy
     x: 2000,  // adjust width of scrollable area
     y: 2000,  // adjust height of scrollable area
     width: 1,
@@ -703,7 +765,7 @@ async function addNote() {
   if (!currentBoardId) return alert("Pick a board first");
 
   try {
-    await api("/notes", "POST", {
+    const newNote = await api("/notes", "POST", {
       board_id: currentBoardId,
       x: lastClickPos.x,
       y: lastClickPos.y,
@@ -712,11 +774,19 @@ async function addNote() {
       color: "#FFF59D",
       content: "",
     });
-    await loadNotes();
+
+    // Make sure the new note appears where you clicked
+    newNote.x = lastClickPos.x;
+    newNote.y = lastClickPos.y;
+
+    createNoteElement(newNote);
+
   } catch (err) {
     console.error("Failed creating note", err);
   }
 }
+
+
 
 async function copyNote() {
   if (!activeNoteId) return;
@@ -733,7 +803,6 @@ async function copyNote() {
     height: parseFloat(n.style.height) || 30,
     color: n.style.background || "#FFF59D",
   };
-  console.log("Note copied to clipboard", clipboardNote);
 
   //   alert("Note copied! Switch boards and use Paste to insert.");
   closeActionSheet();
@@ -798,33 +867,6 @@ function debounce(fn, ms) {
     t = setTimeout(() => fn.apply(this, args), ms);
   };
 }
-
-window.addEventListener("load", async () => {
-  const addBoardBtn = document.getElementById("addBoardBtn");
-  if (addBoardBtn) addBoardBtn.addEventListener("click", createBoard);
-
-  if (!document.getElementById("addNoteBtn")) {
-    if (addBoardBtn)
-      addBoardBtn.insertAdjacentHTML(
-        "afterend",
-        '<button id="addNoteBtn">+ Note</button>'
-      );
-  }
-  const addNoteBtn = document.getElementById("addNoteBtn");
-  if (addNoteBtn) addNoteBtn.addEventListener("click", addNote);
-
-  //   const changeColorBtn = document.getElementById("changeColorBtn");
-  //   if (changeColorBtn) changeColorBtn.addEventListener("click", changeColor);
-  const deleteNoteBtn = document.getElementById("deleteNoteBtn");
-  if (deleteNoteBtn) deleteNoteBtn.addEventListener("click", deleteNote);
-
-  await loadBoards();
-  const bs = await api("/boards");
-  if (bs && bs.length) {
-    if (!currentBoardId) await selectBoard(bs[0].id);
-    else await loadNotes();
-  }
-});
 
 const settingsBtn = document.getElementById("settingsBtn");
 const settingsMenu = document.getElementById("settingsMenu");
@@ -909,6 +951,36 @@ boardArea.addEventListener("pointermove", () => {
 
 boardArea.addEventListener("pointerup", () => {
   setTimeout(() => isScrolling = false, 50); // reset shortly after pointer up
+});
+
+window.addEventListener("load", async () => {
+  
+  const addBoardBtn = document.getElementById("addBoardBtn");
+  if (addBoardBtn) addBoardBtn.addEventListener("click", createBoard);
+
+  if (!document.getElementById("addNoteBtn")) {
+    if (addBoardBtn)
+      addBoardBtn.insertAdjacentHTML(
+        "afterend",
+        '<button id="addNoteBtn">+ Note</button>'
+      );
+  }
+  const addNoteBtn = document.getElementById("addNoteBtn");
+  if (addNoteBtn) addNoteBtn.addEventListener("click", addNote);
+
+  const deleteNoteBtn = document.getElementById("deleteNoteBtn");
+  if (deleteNoteBtn) deleteNoteBtn.addEventListener("click", deleteNote);
+
+  await loadBoards();
+  const boards = await api("/boards");
+
+  // Try to restore last selected board
+  const lastBoardId = localStorage.getItem("lastBoardId");
+  if (lastBoardId && boards.find(b => b.id == lastBoardId)) {
+    await selectBoard(parseInt(lastBoardId));
+  } else if (boards.length) {
+    await selectBoard(boards[0].id);
+  }
 });
 
 

@@ -2,3 +2,5 @@ db.sqlite
 .vscode/
 __pycache__/
 env/
+db copy.sqlite
+.DS_Store

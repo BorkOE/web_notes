@@ -24,10 +24,17 @@ body.dragging {
     user-select: none;
 }
 
+body.dragging, .dragging * {
+  user-select: none !important;   /* prevents text selection */
+  -webkit-user-select: none !important;
+  -ms-user-select: none !important;
+  touch-action: none !important;  /* ensures no mobile gestures interfere */
+}
+
 .topbar {
     height: 56px;
     background: #ffffff;
-    border-bottom: 1px solid #e6e6e6;
+    border-bottom: 2px solid #e6e6e6;
     display: flex;
     align-items: center;
     padding: 0 8px;
@@ -36,7 +43,7 @@ body.dragging {
 }
 
 .boards {
-display: flex;
+    display: flex;
     gap: 8px;
     flex: 1;
     align-items: center;
@@ -115,7 +122,7 @@ display: flex;
     border-radius: 6px;
     padding: 6px;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-    z-index: 2000;
+    z-index: 99000;
 }
 
 .context-menu.hidden {
@@ -138,9 +145,12 @@ display: flex;
 
 .board-tab {
     display: inline-block;       /* let width adapt to content */
-    padding: 6px 12px;           /* horizontal padding */
+    padding: 6px 6px;           /* horizontal padding */
     border-radius: 9999px;       /* fully rounded, pill shape */
-    background: #f7f7f7;
+    border: 4px solid transparent; 
+    transition: border-color 0.2s ease;
+
+    background: #ffffff;
     cursor: pointer;
     white-space: nowrap;          /* prevent wrapping */
     max-width: 100%;             /* prevent overflow out of container */
@@ -151,10 +161,12 @@ display: flex;
     -khtml-user-select: none;
     -moz-user-select: none;
     -ms-user-select: none;
+    
 }
 
 .board-tab.active {
-    background: #e0f7fa
+    background: #ffe7e7;
+    /* font-weight: bold; */
 }
 
 .board-area {
@@ -172,14 +184,19 @@ display: flex;
 .note {
     position: absolute;
     height: auto;
+    min-height: 30px;
     border: 2px solid transparent;
     border-radius: 6px;
-    padding-top: 25px;
-    /* space for handle */
+    padding-top: 15px;
+    /* keep this for handle */
+    padding-left: 0;
+    /* remove horizontal padding here */
+    padding-right: 0;
+    padding-bottom: 0;
     box-sizing: border-box;
     touch-action: manipulation;
-    transition: background 0.5s ease; /* fade effect */
-
+    transition: background 0.5s ease;
+    box-shadow: 8px 10px 5px rgba(17, 25, 28, .2);
 }
 
 .drag-handle {
@@ -188,9 +205,11 @@ display: flex;
     left: 0;
     right: 0;
     height: 25px;
+    border: 1px solid transparent;
+    border-radius: 6px;
     background: rgba(0, 0, 0, 0.05);
     cursor: grab;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    /* border-bottom: 1px solid rgba(0, 0, 0, 0.1); */
     pointer-events: auto;
     touch-action: none;   /* disables panning/zooming on handle */
 }
@@ -198,7 +217,6 @@ display: flex;
 .note-content {
     width: 100%;
     height: auto;
-    /* allow JS to set height */
     min-height: 15px;
     border: 0;
     background: transparent;
@@ -206,17 +224,30 @@ display: flex;
     outline: none;
     font-size: 14px;
     overflow: hidden;
-
-    touch-action: manipulation; /* better on Chrome Android */
+    touch-action: none;
+    /* touch-action: manipulation;  */
 
     user-select: text !important;
     -webkit-user-select: text !important;
+    
+    /* padding inside content */
+    padding: 4px 8px 8px 8px;
+    box-sizing: border-box;
 }
 
 .note.selected {
-    outline: 2px solid #4285f4;
+    outline: 2px solid #ffdfda;
     /* blue border highlight */
 }
+
+.note.focused {
+  /*background-color: #ffffcc !important; /* light yellow */
+  outline: 3px solid #ffa193;
+}
+
+/* .note.focused, .note.selected{
+    box-shadow: 15px 15px 5px rgba(17, 25, 28, .3);
+} */
 
 .action-sheet {
     position: fixed;
@@ -282,6 +313,21 @@ display: flex;
     display: flex;
     align-items: center;
 }
+
+/* ensure MediumEditor toolbar is always on top */
+.medium-editor-toolbar,
+.medium-editor-anchor-preview,
+.medium-editor-toolbar-form {
+    /* position: fixed !important; */
+    /* avoid being trapped in stacking contexts */
+    z-index: 100000 !important;
+    /* higher than notes (max z) and action sheet */
+}
+
+/* .medium-editor-toolbar {
+    transform: none !important;
+    will-change: auto !important;
+} */
 
 @media (max-width:600px) {
     .topbar {
