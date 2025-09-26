@@ -25,6 +25,7 @@
         <div id="boards" class="boards"></div>
 
         <div class="topbar-actions">
+            <button id="modeToggle" class="icon-btn" title="Toggle Edit/Scroll">✏️</button>
             <button id="addNoteBtn" class="icon-btn" title="New Note">➕</button>
             <button id="settingsBtn" class="icon-btn" title="Settings">⚙️</button>
             <div class="bg-color-picker-wrapper">
@@ -40,14 +41,14 @@
         <div class="settings-content">
             <button id="newBoardBtn">➕ New board</button>
             <button id="pasteNoteBtn">📋 Paste note</button>
-            <button id="recentlyDeletedBtn">🕑 Recently deleted</button>
+            <button id="recentlyDeletedBtn">🕑 Recently deleted (coming soon...)</button>
             <button id="renameProjectFromMenuBtn">⚜️ Rename project</button>
             <label>
                 📐 Snapping
                 <input type="checkbox" id="snapToggle" />
             </label>
             <form action="http://192.168.1.14:1906/">
-                <input type="submit" value=">❌ Close project" />
+                <input type="submit" value="❌ Close project" />
             </form>
         </div>
     </div>
@@ -65,10 +66,6 @@
     <main id="boardArea" class="board-area">
     </main>
 
-    <!-- Floating toggle button -->
-    <button id="modeToggle" class="mode-btn">✋</button>
-
-    
     <!-- Bottom action sheet -->
     <div id="actionSheet" class="action-sheet hidden">
         <div class="sheet-content">

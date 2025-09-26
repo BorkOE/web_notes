@@ -15,6 +15,8 @@ let lastActiveNoteId = null;
 let contextBoardId = null;  // Board ID for context menu actions
 let LONGPRESS_MS = 400;
 let snapGridSize = 20; // pixels to snap to
+let mode = "edit"; // default
+
 
 async function api(path, method = "GET", body = null) {
   const opts = { method, headers: { "Content-Type": "application/json" } };
@@ -38,6 +40,54 @@ const renameBoardBtn = document.getElementById("renameBoardBtn");
 const copyNoteBtn = document.getElementById("copyNoteBtn");
 const pasteNoteBtn = document.getElementById("pasteNoteBtn");
 const snapToggle = document.getElementById("snapToggle"); // toggle button in menu
+
+
+// Simple Markdown → HTML converter (extended with multiple heading levels)
+function markdownToHtml(markdown) {
+  const lines = markdown.trim().split(/\r?\n/);
+  let htmlLines = [];
+  let inList = false;
+
+  for (let line of lines) {
+    line = line.replace(/\s+$/, ""); // trim right
+
+    // Headings (#, ##, ###...)
+    let headingMatch = line.match(/^(#{1,6})\s+(.*)$/);
+    if (headingMatch) {
+      const level = headingMatch[1].length; // number of #
+      let content = headingMatch[2];
+      content = content.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+      htmlLines.push(`<h${level}>${content}</h${level}>`);
+      continue;
+    }
+
+    // Lists (- item)
+    if (/^- /.test(line)) {
+      if (!inList) {
+        htmlLines.push("<ul>");
+        inList = true;
+      }
+      let content = line.replace(/^- /, "");
+      content = content.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+      htmlLines.push(`<li>${content}</li>`);
+      continue;
+    } else if (inList) {
+      htmlLines.push("</ul>");
+      inList = false;
+    }
+
+    // Normal paragraph with bold
+    if (line.trim()) {
+      let content = line.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+      htmlLines.push(`<p>${content}</p>`);
+    } else {
+      htmlLines.push(""); // blank line = spacing
+    }
+  }
+
+  if (inList) htmlLines.push("</ul>");
+  return htmlLines.join("\n");
+}
 
 
 newBoardBtn.addEventListener("click", async () => {
@@ -121,31 +171,29 @@ document.addEventListener("pointerup", () => {
 });
 
 function applyModeToNotes() {
-  // Set contenteditable on note content and a touch-action to allow board scrolling from a note
   Object.values(notes).forEach((el) => {
     const editorDiv = el.querySelector(".note-content");
+    const draghandles = el.querySelector(".drag-handle");
     if (!editorDiv) return;
 
     if (mode === "edit") {
       editorDiv.setAttribute("contenteditable", "true");
-      editorDiv.style.touchAction = "none"; // let text interaction work
+      editorDiv.style.touchAction = "none"; // disable gestures so text editing works properly
       editorDiv.style.userSelect = "text";
+      draghandles.style.touchAction = "none";
     } else {
       editorDiv.setAttribute("contenteditable", "false");
-      // Allow vertical panning starting from inside a note
-      editorDiv.style.touchAction = "pan-y pan-x"; // allow scrolling
+      // ✅ Let the browser handle pinch-zoom + scroll normally
+      editorDiv.style.touchAction = "auto";
       editorDiv.style.userSelect = "none";
+      editorDiv.style.pointerEvents = "none"; // disable all interactions
+      draghandles.style.touchAction = "auto";
     }
 
-    // Try to enable/disable interact.js dragging/resizing per-note.
-    // interact().draggable accepts { enabled: true/false } in modern versions.
     try {
       interact(el).draggable({ enabled: mode === "edit" });
       interact(el).resizable({ enabled: mode === "edit" });
-    } catch (e) {
-      // If your interact version doesn't support toggling like this,
-      // you can ignore or re-initialize interact on mode changes.
-    }
+    } catch (e) { }
   });
 }
 
@@ -485,6 +533,7 @@ function bringToFront(el, noteId) {
 }
 
 function selectNote(el, id) {
+  if (mode !== "edit") return;
   // remove highlight from all notes
   Object.values(notes).forEach((noteEl) => noteEl.classList.remove("selected"));
   // highlight current
@@ -542,6 +591,10 @@ function createNoteElement(n) {
         "orderedlist",
       ],
     },
+    paste: {
+      forcePlainText: false,
+    },
+
   }).subscribe("editableClick", function (e) {
     if (e.target.href) {
       window.open(e.target.href);
@@ -550,6 +603,24 @@ function createNoteElement(n) {
   editor.subscribe("editableClick", function (e) {
     if (e.target.href) {
       window.open(e.target.href, "_blank");
+    }
+  });
+  editor.subscribe('editablePaste', function (event, editable) {
+    const text = (event.clipboardData || window.clipboardData).getData('text/plain');
+    if (text && text.trim().startsWith('<') && text.trim().endsWith('>')) {
+      event.preventDefault();
+      document.execCommand('insertHTML', false, text);
+    }
+  });
+  // Paste handler that converts Markdown → HTML if detected
+  editor.subscribe("editablePaste", function (event, editable) {
+    const text = (event.clipboardData || window.clipboardData).getData("text/plain");
+
+    // Detect Markdown: at least one heading/list/bold marker
+    if (/^#{1,6}\s|^- |[*_]{2}.+?[*_]{2}/m.test(text)) {
+      event.preventDefault();
+      const html = markdownToHtml(text);
+      document.execCommand("insertHTML", false, html);
     }
   });
 
@@ -604,10 +675,10 @@ function createNoteElement(n) {
 
   // click/tap behavior:
   el.addEventListener("click", (ev) => {
-    ev.stopPropagation();
-
     // If we're in scroll mode, ignore clicks entirely so notes are not selected.
     if (mode !== "edit") return;
+    
+    ev.stopPropagation();
 
     if (longPressTriggered || isScrolling) {
       longPressTriggered = false;
@@ -682,19 +753,19 @@ function createNoteElement(n) {
     });
   }
 
-  // Save content & height when user types, but do UI resize immediately
-  editorDiv.addEventListener("input", () => {
-    autoResize(false); // immediate visual update
-    saveContentDebounced(); // debounced content save
-    persistHeightDebounced(editorDiv.scrollHeight); // schedule height save (debounced inside)
-  });
+  // expose for global calls
+  editorDiv.autoResize = autoResize;
+
+  // If note contains images, wait for them to load and then resize.
+  // We'll attach listeners after the element is in the DOM (below), but also
+  // ensure we handle cached images.
 
   // Ensure blur persists immediately
   editorDiv.addEventListener("blur", async () => {
     autoResize(true);
     try {
       await api("/notes/" + n.id, "PATCH", {
-        content: editorDiv.value,
+        content: editorDiv.innerHTML,
         height: Math.round(editorDiv.scrollHeight),
       });
     } catch (err) {
@@ -706,12 +777,14 @@ function createNoteElement(n) {
     clearTimeout(longPressTimer);
     try {
       el.releasePointerCapture(e.pointerId);
-    } catch (err) {}
+    } catch (err) { }
   });
   el.addEventListener("pointercancel", () => clearTimeout(longPressTimer));
 
   // click/tap behavior:
   el.addEventListener("click", (ev) => {
+    if (mode !== "edit") return;
+
     ev.stopPropagation();
     if (longPressTriggered || isScrolling) {
       longPressTriggered = false;
@@ -736,6 +809,38 @@ function createNoteElement(n) {
   if ((n.height || 0) < editorDiv.scrollHeight)
     persistHeightDebounced(editorDiv.scrollHeight);
 
+  // --- IMAGE HANDLING: listen for images that finish loading later ---
+  const attachImageListeners = (img) => {
+    if (!img) return;
+    if (img.complete) {
+      // already loaded (cached) — trigger resize
+      autoResize(false);
+    } else {
+      img.addEventListener('load', () => autoResize(false));
+      img.addEventListener('error', () => autoResize(false));
+    }
+  };
+
+  // Attach to existing images inside the note
+  editorDiv.querySelectorAll('img').forEach(attachImageListeners);
+
+  // Observe future mutations (e.g., paste adds images) and attach listeners
+  const mo = new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      for (const node of m.addedNodes) {
+        if (node.nodeType !== 1) continue;
+        if (node.tagName === 'IMG') {
+          attachImageListeners(node);
+        } else {
+          node.querySelectorAll && node.querySelectorAll('img').forEach(attachImageListeners);
+        }
+      }
+    }
+  });
+  mo.observe(editorDiv, { childList: true, subtree: true });
+  // store observer so it can be cleaned up if needed later
+  editorDiv._imageObserver = mo;
+
   // Make draggable only (no horizontal resizing) to keep width static
   interact(el)
     .draggable({
@@ -745,11 +850,11 @@ function createNoteElement(n) {
 
       inertia: false,
       modifiers: [
-        // interact.modifiers.restrictRect({
-        //   restriction: "#boardArea", // stay inside board
-        //   endOnly: true,
-        //   elementRect: { top: 0, left: 0, bottom: 1, right: 0 },
-        // }),
+        interact.modifiers.restrictRect({
+          restriction: "#boardArea", // stay inside board
+          endOnly: true,
+          elementRect: { top: 0, left: 0, bottom: 0, right: 0 },
+        }),
         interact.modifiers.snap({
           targets: snapEnabled
             ? [interact.createSnapGrid({ x: snapGridSize, y: snapGridSize })]
@@ -808,11 +913,11 @@ function createNoteElement(n) {
         interact.modifiers.snapSize({
           targets: snapEnabled
             ? [
-                interact.createSnapGrid({
-                  width: snapGridSize,
-                  height: snapGridSize,
-                }),
-              ]
+              interact.createSnapGrid({
+                width: snapGridSize,
+                height: snapGridSize,
+              }),
+            ]
             : [],
         }),
       ],
@@ -855,6 +960,41 @@ function clearBoardArea() {
   notes = {};
 }
 
+// Schedule global resize passes to account for images loading from the network.
+// We'll run a quick pass on next paint, another after 1s, and a final one after 5s
+// (the final pass will also persist heights).
+function scheduleResizePasses() {
+  // next paint
+  requestAnimationFrame(() => {
+    Object.values(notes).forEach((el) => {
+      const editorDiv = el.querySelector('.note-content');
+      if (editorDiv && typeof editorDiv.autoResize === 'function') {
+        try { editorDiv.autoResize(false); } catch (e) { /* ignore */ }
+      }
+    });
+  });
+
+  // 1 second later — helpful for slow image loads
+  setTimeout(() => {
+    Object.values(notes).forEach((el) => {
+      const editorDiv = el.querySelector('.note-content');
+      if (editorDiv && typeof editorDiv.autoResize === 'function') {
+        try { editorDiv.autoResize(false); } catch (e) { /* ignore */ }
+      }
+    });
+  }, 1000);
+
+  // 5 seconds later — final pass and persist heights
+  setTimeout(() => {
+    Object.values(notes).forEach((el) => {
+      const editorDiv = el.querySelector('.note-content');
+      if (editorDiv && typeof editorDiv.autoResize === 'function') {
+        try { editorDiv.autoResize(true); } catch (e) { /* ignore */ }
+      }
+    });
+  }, 5000);
+}
+
 async function loadNotes() {
   if (!currentBoardId) return;
   clearBoardArea();
@@ -874,6 +1014,9 @@ async function loadNotes() {
   };
   createNoteElement(paddingNote);
   applyModeToNotes(); // 👈 ensure new notes respect mode
+
+  // Run scheduled resize passes (next paint, 1s, 5s)
+  scheduleResizePasses();
 }
 
 async function addNote() {
@@ -925,17 +1068,16 @@ async function copyNote() {
 
 
 function openActionSheet(noteId) {
+  if (mode !== "edit") return;
   activeNoteId = noteId;
   const sheet = document.getElementById("actionSheet");
   if (!sheet) return;
   sheet.classList.add("visible");
-  //   sheet.classList.remove("hidden");
 }
 
 function closeActionSheet() {
   const sheet = document.getElementById("actionSheet");
   if (!sheet) return;
-  // sheet.classList.add("hidden");
   sheet.classList.remove("visible");
   activeNoteId = null;
 }
@@ -965,7 +1107,7 @@ async function deleteNote() {
   if (contentEl && contentEl.innerHTML.trim() !== "") {
     if (!confirm("Delete note?")) return;
   }
-  
+
   try {
     await api("/notes/" + activeNoteId, "DELETE");
     closeActionSheet();
@@ -1069,7 +1211,7 @@ boardArea.addEventListener("pointerup", () => {
 });
 
 window.addEventListener("load", async () => {
-  
+
   const addBoardBtn = document.getElementById("addBoardBtn");
   if (addBoardBtn) addBoardBtn.addEventListener("click", createBoard);
 
@@ -1098,7 +1240,6 @@ window.addEventListener("load", async () => {
   }
 });
 
-let mode = "edit"; // default
 
 const modeBtn = document.getElementById("modeToggle");
 modeBtn.onclick = () => {
@@ -1109,11 +1250,8 @@ modeBtn.onclick = () => {
     mode = "scroll";
     modeBtn.textContent = "✋";
   }
-  console.log("Mode switched to:", mode);
   applyModeToNotes(); // 👈 update all notes
 };
-modeBtn.click();
-modeBtn.click();
 
 modeBtn.onclick = () => {
   if (mode === "scroll") {
@@ -1124,7 +1262,6 @@ modeBtn.onclick = () => {
     modeBtn.textContent = "✋";
   }
 
-  console.log("Mode switched to:", mode);
   localStorage.setItem("lastMode", mode); // ✅ persist mode
   applyModeToNotes();
 };
@@ -1143,9 +1280,6 @@ window.addEventListener("load", async () => {
 
   applyModeToNotes();
 });
-
-
-
 
 function updateVH() {
   document.documentElement.style.setProperty(
