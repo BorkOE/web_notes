@@ -63,8 +63,11 @@
         </div>
     </div>
 
-    <main id="boardArea" class="board-area">
-    </main>
+    <div id="globalMenuContainer"></div>
+
+    <main id="boardArea" class="board-area"></main>
+
+
 
     <!-- Bottom action sheet -->
     <div id="actionSheet" class="action-sheet hidden">
@@ -72,8 +75,15 @@
             <div class="bg-color-picker-wrapper">
                 <div id="noteColorPickerContainer" class="pickr-container" ></div>
             </div>
-            <button id="copyNoteBtn">Copy</button>
-            <button id="deleteNoteBtn">Delete</button>
+            
+            <div class="menu-wrapper">
+                <button class="menu-trigger" data-menu="noteMenu">Note ▾</button>
+                <button class="menu-trigger" data-menu="tableMenu">Table ▾</button>
+                <button class="menu-trigger" data-menu="insertMenu">Insert ▾</button>
+            </div>
+            <div>
+                <button id="closeActionSheet" onclick="closeActionSheet()" style="border: none;">╳</button>
+            </div>
         </div>
     </div>
 

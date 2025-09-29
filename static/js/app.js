@@ -17,6 +17,63 @@ let LONGPRESS_MS = 400;
 let snapGridSize = 20; // pixels to snap to
 let mode = "edit"; // default
 
+const insertItems = [
+  { label: "✅ Checkbox", html: '<input type="checkbox"/>' },
+  { label: "🔥 Fire Emoji", text: "🔥" },
+  { label: "❤️ Heart", text: "❤️" },
+  { label: "⚡ Lightning", text: "⚡" },
+];
+
+const menus = {
+  tableMenu: {
+    autoClose: false,   // stays open after click
+    buttons: [
+      { text: '+ Row', action: addRowBelow },
+      { text: '+ Col', action: addColumnRight },
+      { text: '– Row', action: deleteRow },
+      { text: '– Col', action: deleteColumn },
+    ]
+  },
+  noteMenu: {
+    autoClose: true,    // closes after click
+    buttons: [
+      { text: 'Copy', action: copyNote },
+      { text: 'Delete', action: deleteNote },
+    ]
+  },
+  insertMenu: {
+  autoClose: false, // stays open after insertion
+  buttons: insertItems.map(item => ({
+    text: item.label,
+    action: () => {
+      const selection = window.getSelection();
+      if (!selection.rangeCount) return;
+
+      const range = selection.getRangeAt(0);
+
+      // Only insert if the cursor is inside a .note-content
+      if (!range.startContainer.closest('.note-content')) {
+        console.log("Cursor not in a note content, insertion cancelled.");
+        return;
+      }
+
+      if (item.text) {
+        range.deleteContents();
+        range.insertNode(document.createTextNode(item.text));
+      } else if (item.html) {
+        const temp = document.createElement('div');
+        temp.innerHTML = item.html;
+        const frag = document.createDocumentFragment();
+        Array.from(temp.childNodes).forEach(n => frag.appendChild(n));
+        range.deleteContents();
+        range.insertNode(frag);
+      }
+
+      selection.collapseToEnd(); // move cursor after insertion
+    }
+  }))
+}
+};
 
 async function api(path, method = "GET", body = null) {
   const opts = { method, headers: { "Content-Type": "application/json" } };
@@ -42,21 +99,120 @@ const pasteNoteBtn = document.getElementById("pasteNoteBtn");
 const snapToggle = document.getElementById("snapToggle"); // toggle button in menu
 
 
-// Simple Markdown → HTML converter (extended with multiple heading levels)
+// Extended Markdown → HTML converter (headings, lists, tables, bold, paragraphs)
 function markdownToHtml(markdown) {
-  const lines = markdown.trim().split(/\r?\n/);
-  let htmlLines = [];
-  let inList = false;
+  if (!markdown) return "";
 
-  for (let line of lines) {
-    line = line.replace(/\s+$/, ""); // trim right
+  const escapeHtml = (s) =>
+    String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+
+  const splitRow = (line) => {
+    // split on | and remove only leading/trailing empty entries created by
+    // a leading/trailing pipe. Keep empty cells in the middle.
+    const parts = line.split("|");
+    let start = 0;
+    let end = parts.length;
+    if (parts.length > 0 && parts[0].trim() === "") start = 1;
+    if (parts.length > 1 && parts[parts.length - 1].trim() === "") end = parts.length - 1;
+    return parts.slice(start, end).map((p) => p.trim());
+  };
+
+  const isDelimiterRow = (parts) => {
+    if (!parts || parts.length === 0) return false;
+    // each part must be like --- or :---: or ---: or :--- (allow at least one dash)
+    return parts.every((p) => /^:?-{1,}:?$/.test(p));
+  };
+
+  const cellAlignment = (sep) => {
+    if (sep.startsWith(":") && sep.endsWith(":")) return "center";
+    if (sep.startsWith(":")) return "left";
+    if (sep.endsWith(":")) return "right";
+    return "left";
+  };
+
+  const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+  const htmlLines = [];
+  let inList = false;
+  let tableBuffer = [];
+
+  const flushTableBuffer = () => {
+    if (tableBuffer.length === 0) return;
+
+    // Need at least 2 rows (header + delimiter) to be a table
+    if (tableBuffer.length >= 2) {
+      const headerParts = splitRow(tableBuffer[0]);
+      const delimParts = splitRow(tableBuffer[1]);
+
+      if (isDelimiterRow(delimParts) && headerParts.length > 0) {
+        // table detected
+        // compute alignments (based on delimiter row)
+        const aligns = delimParts.map((d) => cellAlignment(d));
+
+        htmlLines.push('<table class="md-table"><thead><tr>');
+        headerParts.forEach((h, i) => {
+          const content = escapeHtml(h).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+          const align = aligns[i] || "left";
+          htmlLines.push(`<th style="text-align:${align}">${content}</th>`);
+        });
+        htmlLines.push("</tr></thead><tbody>");
+
+        // body rows (starting from third row)
+        for (let r = 2; r < tableBuffer.length; r++) {
+          const rowParts = splitRow(tableBuffer[r]);
+          htmlLines.push("<tr>");
+          // make sure we produce same number of cells as headers
+          for (let c = 0; c < headerParts.length; c++) {
+            const raw = rowParts[c] === undefined ? "" : rowParts[c];
+            const cell = escapeHtml(raw).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+            const align = aligns[c] || "left";
+            htmlLines.push(`<td style="text-align:${align}">${cell}</td>`);
+          }
+          htmlLines.push("</tr>");
+        }
+
+        htmlLines.push("</tbody></table>");
+        tableBuffer = [];
+        return;
+      }
+    }
+
+    // Not a table — output the buffered lines as normal paragraphs (preserve blank lines)
+    for (const l of tableBuffer) {
+      const trimmed = l.trim();
+      if (trimmed === "") {
+        htmlLines.push("");
+      } else {
+        const content = escapeHtml(trimmed).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+        htmlLines.push(`<p>${content}</p>`);
+      }
+    }
+    tableBuffer = [];
+  };
+
+  for (let rawLine of lines) {
+    const line = rawLine.replace(/\s+$/, ""); // rtrim
+
+    // Table candidate: line that contains pipes (we accept lines that contain at least one pipe)
+    if (/\|/.test(line)) {
+      // accumulate contiguous pipe lines into a table buffer
+      tableBuffer.push(line);
+      continue;
+    } else {
+      // if we hit a non-pipe line, flush the buffered table (if any)
+      flushTableBuffer();
+    }
 
     // Headings (#, ##, ###...)
-    let headingMatch = line.match(/^(#{1,6})\s+(.*)$/);
+    const headingMatch = line.match(/^(#{1,6})\s+(.*)$/);
     if (headingMatch) {
-      const level = headingMatch[1].length; // number of #
+      const level = headingMatch[1].length;
       let content = headingMatch[2];
-      content = content.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+      content = escapeHtml(content).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
       htmlLines.push(`<h${level}>${content}</h${level}>`);
       continue;
     }
@@ -68,7 +224,7 @@ function markdownToHtml(markdown) {
         inList = true;
       }
       let content = line.replace(/^- /, "");
-      content = content.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+      content = escapeHtml(content).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
       htmlLines.push(`<li>${content}</li>`);
       continue;
     } else if (inList) {
@@ -78,16 +234,195 @@ function markdownToHtml(markdown) {
 
     // Normal paragraph with bold
     if (line.trim()) {
-      let content = line.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+      let content = escapeHtml(line).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
       htmlLines.push(`<p>${content}</p>`);
     } else {
       htmlLines.push(""); // blank line = spacing
     }
   }
 
+  // flush any remaining table buffer at EOF
+  flushTableBuffer();
   if (inList) htmlLines.push("</ul>");
+
   return htmlLines.join("\n");
 }
+
+function findTableAndCell() {
+  if (!activeNoteId) return null;
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return null;
+
+  let node = sel.getRangeAt(0).startContainer;
+
+  // If it's a text node → move up
+  if (node.nodeType === Node.TEXT_NODE) {
+    node = node.parentElement;
+  }
+
+  const cell = node.closest("td, th");
+  if (!cell) return null;
+
+  const table = cell.closest("table");
+  if (!table) return null;
+
+  return { table, cell };
+}
+
+
+function addRowBelow() {
+  const ctx = findTableAndCell();
+  if (!ctx) {
+    // No table → spawn a new one
+    insertNewTable();
+    return;
+  }
+  const { table, cell } = ctx;
+  const row = cell.parentElement;
+  const rowIndex = row.rowIndex; // includes thead rows
+  const newRow = table.insertRow(rowIndex + 1);
+
+  // Use column count from first row
+  const colCount = table.rows[0].cells.length;
+  for (let i = 0; i < colCount; i++) {
+    const td = newRow.insertCell(i);
+    td.innerHTML = "&nbsp;";
+  }
+}
+
+function addColumnRight() {
+  const ctx = findTableAndCell();
+  if (!ctx) {
+    // No table → spawn a new one
+    insertNewTable();
+    return;
+  }
+  const { table, cell } = ctx;
+  const colIndex = cell.cellIndex;
+
+  for (let r = 0; r < table.rows.length; r++) {
+    const row = table.rows[r];
+    const newCell = row.insertCell(colIndex + 1);
+    newCell.innerHTML = r === 0 ? "<strong>Header</strong>" : "&nbsp;";
+  }
+}
+
+
+// 🗑️ Delete the current row
+function deleteRow() {
+  const ctx = findTableAndCell();
+  if (!ctx) return;
+
+  const row = ctx.cell.parentElement;
+  const tbody = row.parentElement;
+
+  // Only delete if more than one row left
+  if (tbody.rows.length > 1) {
+    row.remove();
+  } else {
+    // If it's the last row → remove the whole table
+    ctx.table.remove();
+  }
+}
+
+// 🗑️ Delete the current column
+function deleteColumn() {
+  const ctx = findTableAndCell();
+  if (!ctx) return;
+
+  const cellIndex = ctx.cell.cellIndex;
+
+  // Only delete if more than one column
+  if (ctx.table.rows[0].cells.length > 1) {
+    [...ctx.table.rows].forEach(r => {
+      if (r.cells[cellIndex]) {
+        r.deleteCell(cellIndex);
+      }
+    });
+  } else {
+    // If it was the only column → remove whole table
+    ctx.table.remove();
+  }
+}
+
+function insertNewTable() {
+  if (!activeNoteId) return;
+  const note = notes[activeNoteId];
+  const editorDiv = note.querySelector(".note-content");
+
+  const tableHtml = `
+    <table class="md-table">
+      <thead>
+        <tr><th>Header</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>&nbsp;</td></tr>
+      </tbody>
+    </table>
+  `;
+  document.execCommand("insertHTML", false, tableHtml);
+}
+
+
+
+// Menu container logic
+const menuContainer = document.getElementById('globalMenuContainer');
+let currentOpenMenuId = null; // track currently open menu
+
+document.querySelector('#actionSheet').addEventListener("click", (e) => {
+  if (document.getElementsByClassName('sub-menu')) {
+    menuContainer.style.display = 'none';
+  };
+  const trigger = e.target.closest(".menu-trigger");
+  if (!trigger) return;
+
+  menuContainer.style.display = 'none';
+  menuContainer.innerHTML = '';
+
+  const menuId = trigger.dataset.menu;
+  const menuDef = menus[menuId];
+  if (!menuDef) return;
+
+    // If the same menu is already open, close it
+  if (currentOpenMenuId === menuId) {
+    menuContainer.style.display = 'none';
+    currentOpenMenuId = null;
+    return;
+  }
+
+  const menu = document.createElement('div');
+  menu.classList.add('sub-menu');
+
+  menuDef.buttons.forEach(b => {
+    const btn = document.createElement('button');
+    btn.textContent = b.text;
+    btn.addEventListener('click', evt => {
+      evt.stopPropagation();
+      b.action();
+      if (menuDef.autoClose) menuContainer.style.display = 'none';
+    });
+    menu.appendChild(btn);
+  });
+
+  menuContainer.appendChild(menu);
+  menuContainer.style.display = 'block';
+  currentOpenMenuId = menuId;
+
+
+  // Position above trigger
+  const rect = trigger.getBoundingClientRect();
+  const addheight = document.getElementsByClassName('topbar')[0].offsetHeight;
+  menu.style.left = `${rect.left}px`;
+  menu.style.top = `${rect.top + addheight}px`;
+});
+
+
+// Hide menu if clicking outside
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#globalMenuContainer') && !e.target.closest('.menu-trigger')) {
+    menuContainer.style.display = 'none';
+  }
+});
 
 
 newBoardBtn.addEventListener("click", async () => {
@@ -186,7 +521,7 @@ function applyModeToNotes() {
       // ✅ Let the browser handle pinch-zoom + scroll normally
       editorDiv.style.touchAction = "auto";
       editorDiv.style.userSelect = "none";
-      editorDiv.style.pointerEvents = "none"; // disable all interactions
+      // editorDiv.style.pointerEvents = "none"; // disable all interactions
       draghandles.style.touchAction = "auto";
     }
 
